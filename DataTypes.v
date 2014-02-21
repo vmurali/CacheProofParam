@@ -1,8 +1,5 @@
 Require Import BaseTree Tree.
 
-Require Export Setoid.
-Require Export Relation_Definitions.
-
 Set Implicit Arguments.
 
 Parameter Addr: Set.
