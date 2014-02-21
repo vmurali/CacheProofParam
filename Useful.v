@@ -1,4 +1,4 @@
-Require Import Arith Omega.
+Require Import Omega.
 
 Ltac destructAll :=
   match goal with

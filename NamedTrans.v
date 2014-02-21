@@ -1,5 +1,3 @@
-Require Import Arith.
-
 Set Implicit Arguments.
 
 Section NamedTrans.
