@@ -1,3 +1,8 @@
+Require Import BaseTree Tree.
+
+Require Export Setoid.
+Require Export Relation_Definitions.
+
 Set Implicit Arguments.
 
 Parameter Addr: Set.
@@ -9,16 +14,18 @@ Inductive Desc := Ld | St.
 Parameter Data: Set.
 Axiom decData: forall (d1 d2: Data), {d1 = d2} + {d1 <> d2}.
 
-Parameter Proc: Set.
-Axiom decProc: forall (c1 c2: Proc), {c1 = c2} + {c1 <> c2}.
-Definition Label := (Proc * nat)%type.
-Theorem decLabel: forall (l1 l2: Label), {l1 = l2} + {l1 <> l2}.
-Proof.
-  intros l1 l2.
-  decide equality.
-  decide equality.
-  apply (decProc a p).
-Qed.
+Parameter bHier : BaseTree.
+
+Definition hier := getC nil bHier.
+Opaque hier.
+
+Record Cache := { node: Tree;
+                  def: descendent node hier }.
+
+Record Proc := { proc: Cache;
+                 isLeaf: leaf (node proc) }.
+
+Definition p_node x := node (proc x).
 
 Record Req := { loc: Addr;
                 desc: Desc;

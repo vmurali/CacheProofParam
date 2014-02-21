@@ -1,24 +1,24 @@
-Require Import DataTypes StoreAtomicity Case NamedTrans Useful.
+Require Import DataTypes StoreAtomicity Case NamedTrans Useful Tree.
 
 Set Implicit Arguments.
 
 Record State := { mem: Addr -> Data;
-                  next: Proc -> nat
+                  next: Tree -> nat
                 }.
 
 Inductive AtomicTrans s: State -> Set :=
 | Req: forall c, AtomicTrans s (Build_State
-                                  (match desc (reqFn c (next s c)) with
+                                  (match desc (reqFn c (next s (p_node c))) with
                                      | Ld => mem s
                                      | St =>
                                        fun t
                                        =>
-                                         match decAddr t (loc (reqFn c (next s c))) with
-                                           | left _ => dataQ (reqFn c (next s c))
+                                         match decAddr t (loc (reqFn c (next s (p_node c)))) with
+                                           | left _ => dataQ (reqFn c (next s (p_node c)))
                                            | _ => mem s t
                                          end
                                    end)
-                                  (fun t => match decProc t c with
+                                  (fun t => match decTree t (p_node c) with
                                               | left _ => S (next s t)
                                               | _ => next s t
                                             end))
@@ -42,8 +42,8 @@ Section Bisim.
     pose (getTrans getTransNext t) as trans;
     unfold getTransSt;
     unfold getTransList;
-    fold (getTransList getTransNext t).
-    simpl; destruct trans; [simpl; destruct (decProc c c0) | ]; omega.
+    fold (getTransList getTransNext t); simpl.
+    destruct trans; [simpl; destruct (decTree c (p_node c0)) | ]; omega.
   Qed.
 
   Lemma nextStarLe t1 t2 c (cond: t1 <= t2): next (getTransSt getTransNext t1) c <=
@@ -59,9 +59,9 @@ Section Bisim.
   Qed.
 
   Lemma reqImpGt t: match getTrans getTransNext t with
-                      | Req c => S (next (getTransSt getTransNext t) c) =
-                                 next (getTransSt getTransNext (S t)) c /\
-                                 forall c', c' <> c ->
+                      | Req c => S (next (getTransSt getTransNext t) (p_node c)) =
+                                 next (getTransSt getTransNext (S t)) (p_node c) /\
+                                 forall c', c' <> p_node c ->
                                             next (getTransSt getTransNext t ) c' =
                                             next (getTransSt getTransNext (S t)) c'
                       | Idle => forall c, next (getTransSt getTransNext t ) c =
@@ -72,10 +72,12 @@ Section Bisim.
     unfold getTransList; fold (getTransList getTransNext t); simpl.
     destruct (getTrans getTransNext t).
     simpl.
-    destruct (decProc c c).
+    destruct (decTree (p_node c) (p_node c)).
     constructor. omega.
     intros c' c'_neq.
-    destruct (decProc c' c); intuition.
+    destruct (decTree c' (p_node c)).
+    intuition.
+    intuition.
     intuition.
     intuition.
   Qed.
@@ -84,9 +86,9 @@ Section Bisim.
     forall t1 t2,
       match getTrans getTransNext t1, getTrans getTransNext t2 with
         | Req c1, Req c2 =>
-          c1 = c2 ->
-          next (getTransSt getTransNext t1) c1 =
-          next (getTransSt getTransNext t2) c2 ->
+          p_node c1 = p_node c2 ->
+          next (getTransSt getTransNext t1) (p_node c1) =
+          next (getTransSt getTransNext t2) (p_node c2) ->
           t1 = t2
         | _, _ => True
       end.
@@ -106,8 +108,8 @@ Section Bisim.
     assumption.
 
     Ltac finish c cond :=
-      pose proof (nextStarLe c cond) as use;
-      omega.
+      pose proof (nextStarLe (p_node c) cond) as use;
+      assert False by omega; intuition.
     finish c lt.
     finish c gt.
 
@@ -118,9 +120,9 @@ Section Bisim.
   Theorem localAtomOrdering:
     forall t1 t2, match getTrans getTransNext t1, getTrans getTransNext t2 with
                     | Req c1, Req c2 =>
-                      c1 = c2 ->
-                      next (getTransSt getTransNext t1) c1 <
-                      next (getTransSt getTransNext t2) c2 ->
+                      p_node c1 = p_node c2 ->
+                      next (getTransSt getTransNext t1) (p_node c1) <
+                      next (getTransSt getTransNext t2) (p_node c2) ->
                         t1 < t2
                     | _, _ => True
                   end.
@@ -137,7 +139,7 @@ Section Bisim.
     destruct opts as [eq | [lt | gt]].
     rewrite eq in *; assert False by omega; intuition.
     intuition.
-    pose proof (nextStarLe c gt) as use;
+    pose proof (nextStarLe (p_node c) gt) as use;
       assert False by omega; intuition.
 
     intuition.
@@ -147,7 +149,8 @@ Section Bisim.
   Theorem allAtomPrev t c i:
     next (getTransSt getTransNext t) c > i ->
     exists t', t' < t /\ match getTrans getTransNext t' with
-                           | Req c' => c = c' /\ next (getTransSt getTransNext t') c' = i
+                           | Req c' => c = p_node c' /\
+                                       next (getTransSt getTransNext t') (p_node c') = i
                            | Idle => False
                          end.
   Proof.
@@ -172,7 +175,7 @@ Section Bisim.
     pose proof (reqImpGt t) as sth2.
     destruct (getTrans getTransNext t).
     destruct sth2 as [u1 u2].
-    destruct (decProc c c0).
+    destruct (decTree c (p_node c0)).
     rewrite e in *; intuition.
     specialize (u2 c n0).
     assert False by omega; intuition.
@@ -186,7 +189,7 @@ Section Bisim.
     destruct (getTrans getTransNext t).
     destruct sth2 as [u1 u2].
     specialize (u2 c).
-    destruct (decProc c c0).
+    destruct (decTree c (p_node c0)).
     rewrite <- e in *.
     assert False by omega; intuition.
     specialize (u2 n0); assert False by omega; intuition.
@@ -197,7 +200,7 @@ Section Bisim.
     match getTrans getTransNext t with
       | Req c' =>
         let (a', descQ', dtQ') :=
-            reqFn c' (next (getTransSt getTransNext t) c') in
+            reqFn c' (next (getTransSt getTransNext t) (p_node c')) in
         a' = a -> descQ' = St -> False
       | _ => True
     end.
@@ -207,7 +210,7 @@ Section Bisim.
 
   Definition matchAtomStore cm tm t a :=
     let (am, descQm, dtQm) :=
-        reqFn cm (next (getTransSt getTransNext tm) cm) in
+        reqFn cm (next (getTransSt getTransNext tm) (p_node cm)) in
     mem (getTransSt getTransNext t) a = dtQm /\
     am = a /\ descQm = St.
 
@@ -318,7 +321,7 @@ Section Bisim.
       simpl in *.
 
     SCase "Req".
-    destruct (reqFn c (next (lSt (getTransList getTransNext t)) c)); simpl.
+    destruct (reqFn c (next (lSt (getTransList getTransNext t)) (p_node c))); simpl.
     destruct desc.
 
     SSCase "Ld".
@@ -331,7 +334,7 @@ Section Bisim.
 
     SSSCase "Prev".
     right; left.
-    destruct (reqFn c (next (lSt (getTransList getTransNext t)) c)).
+    destruct (reqFn c (next (lSt (getTransList getTransNext t)) (p_node c))).
     intuition.
     discriminate.
 
@@ -357,7 +360,7 @@ Section Bisim.
     forall t,
       match getTrans getTransNext t with
         | Req c =>
-          let (a, descQ, dtQ) := reqFn c (next (getTransSt getTransNext t) c) in
+          let (a, descQ, dtQ) := reqFn c (next (getTransSt getTransNext t) (p_node c)) in
           match descQ with
             | Ld => latestAtomValue t a
             | St => True 
@@ -368,7 +371,7 @@ Section Bisim.
     intros t.
     pose proof (latestAtomValueHolds t).
     destruct (getTrans getTransNext t).
-    destruct (reqFn c (next (getTransSt getTransNext t) c)) as [a desc _].
+    destruct (reqFn c (next (getTransSt getTransNext t) (p_node c))) as [a desc _].
     destruct desc.
     apply latestAtomValueHolds.
     intuition.
@@ -377,18 +380,27 @@ Section Bisim.
 
   Definition atomicResp s s' (t: AtomicTrans s s') :=
     match t with
-      | Req c => Some (Build_Resp c (next s c)
-                                  match desc (reqFn c (next s c)) with
-                                    | Ld => (mem s (loc (reqFn c (next s c))))
+      | Req c => Some (Build_Resp c (next s (p_node c))
+                                  match desc (reqFn c (next s (p_node c))) with
+                                    | Ld => (mem s (loc (reqFn c (next s (p_node c)))))
                                     | St => initData zero
                                   end)
       | Idle => None
     end.
 
+  Definition sameResp r1 r2 :=
+    match r1, r2 with
+      | Some (Build_Resp p1 i1 d1), Some (Build_Resp p2 i2 d2) =>
+        p_node p1 = p_node p2 /\ i1 = i2 /\ d1 = d2
+      | Some _, None => False
+      | None, Some _ => False
+      | None, None => True
+    end.
+
   Section PrevMatch.
     Variable t: nat.
     Variable prevEq: forall ti : nat,
-                       ti < t -> respFn ti = atomicResp (getTrans getTransNext ti).
+                       ti < t -> sameResp (respFn ti) (atomicResp (getTrans getTransNext ti)).
 
     Definition nextTransList := getTransList getTransNext.
 
@@ -411,7 +423,7 @@ Section Bisim.
 
     Lemma procSame:
       match atomicResp (getTrans getTransNext t), respFn t with
-        | Some (Build_Resp c1 _ _), Some (Build_Resp c2 _ _) => c1 = c2
+        | Some (Build_Resp c1 _ _), Some (Build_Resp c2 _ _) => p_node c1 = p_node c2
         | _, _ => True
       end.
     Proof.
@@ -427,23 +439,23 @@ Section Bisim.
         | _, _ => True
       end.
     Proof.
-      assocResp;
-      case_eq (respFn t);
-      [intros r caseR; destruct r; simpl in *;
-       intros nextGt;
-       pose proof (allAtomPrev _ _ nextGt) as [t' [t'_lt_t allPrev]];
-       specialize (prevEq t'_lt_t);
-       assocResp;
-       case_eq (respFn t'); [
-         intros r caseR'; destruct r; rewrite caseR' in *; simpl in *;
-         pose proof (uniqRespLabels sa t t') as uniq;
-         rewrite caseR, caseR' in uniq;
-         injection prevEq as _ idEq;
-         rewrite <- idEq in allPrev;
-         assert (tEq: t = t') by (generalize allPrev uniq; clear; intuition);
-         assert False by omega; intuition|
-         intros caseR'; rewrite caseR' in *; intuition] |
-       intros caseR; simpl in *; intuition].
+      assocResp.
+      case_eq (respFn t).
+      intros r caseR; destruct r; simpl in *.
+      intros nextGt.
+      pose proof (allAtomPrev _ _ nextGt) as [t' [t'_lt_t allPrev]].
+      specialize (prevEq t'_lt_t).
+      assocResp.
+      case_eq (respFn t').
+      intros r caseR'; destruct r; rewrite caseR' in *; simpl in *.
+      pose proof (uniqRespLabels sa t t') as uniq.
+      rewrite caseR, caseR' in uniq.
+      destruct prevEq as [_ [idEq _]].
+      rewrite <- idEq in allPrev.
+      assert (tEq: t = t') by (generalize allPrev uniq; clear; intuition).
+      assert False by omega; intuition.
+      intros caseR'; rewrite caseR' in *; intuition.
+      intros caseR; simpl in *; intuition.
     Qed.
 
     Lemma nextLtFalse:
@@ -452,26 +464,26 @@ Section Bisim.
         | _, _ => True
       end.
     Proof.
-      assocResp;
-      case_eq (respFn t);
-      [intros r caseR; destruct r; simpl in *;
-       intros nextLt;
-       pose proof (allPrevious sa t) as allPrev;
-       rewrite caseR in *;
-       specialize (allPrev _ nextLt);
-       destruct allPrev as [t' [t'_lt_t allPrev]];
-       specialize (prevEq t'_lt_t);
-       assocResp;
-       case_eq (respFn t');
-       [intros r caseR'; destruct r; rewrite caseR' in *; simpl in *;
-        pose proof (uniqAtomLabels t t') as uniq;
-        assocResp;
-        rewrite caseR, caseR' in uniq; simpl in *;
-        injection prevEq as _ idEq;
-        assert (tEq: t = t') by (generalize allPrev idEq uniq; clear; intuition);
-        assert False by omega; intuition |
-        intros caseR'; rewrite caseR' in *; intuition] | 
-        intros caseR; simpl in *; intuition].
+      assocResp.
+      case_eq (respFn t).
+      intros r caseR; destruct r; simpl in *.
+      intros nextLt.
+      pose proof (allPrevious sa t) as allPrev.
+      rewrite caseR in *.
+      specialize (allPrev _ nextLt).
+      destruct allPrev as [t' [t'_lt_t allPrev]].
+      specialize (prevEq t'_lt_t).
+      assocResp.
+      case_eq (respFn t').
+      intros r caseR'; destruct r; rewrite caseR' in *; simpl in *.
+      pose proof (uniqAtomLabels t t') as uniq.
+      assocResp.
+      rewrite caseR, caseR' in uniq; simpl in *.
+      destruct prevEq as [_ [idEq _]].
+      assert (tEq: t = t') by (generalize allPrev idEq uniq; clear; intuition).
+      assert False by omega; intuition.
+      intros caseR'; rewrite caseR' in *; intuition.
+      intros caseR; simpl in *; intuition.
     Qed.
 
     Lemma nextEq:
@@ -495,7 +507,7 @@ Section Bisim.
       assocResp.
       case_eq (respFn t).
       intros r respEq; destruct r; simpl in *.
-      case_eq (desc (reqFn procR (next (lSt (nextTransList t)) procR))).
+      case_eq (desc (reqFn procR (next (lSt (nextTransList t)) (p_node procR)))).
       intros isLd.
       pose proof nextEq as nextEq.
       pose proof (storeAtomicity sa t) as atom1.
@@ -527,7 +539,7 @@ Section Bisim.
       intros r respmEq; destruct r; rewrite respmEq in *; simpl in *.
       unfold matchAtomStore in stMatch.
       assocResp.
-      injection prevEq as _ idEq.
+      destruct prevEq as [_ [idEq _]].
       rewrite <- idEq in *.
       destruct (reqFn procR0 idx0).
       destruct stMatch as [[_ [u1 u2]] _].
@@ -547,7 +559,7 @@ Section Bisim.
 
       case_eq (respFn tm).
       intros r respmEq; destruct r; rewrite respmEq in *; simpl in *.
-      injection prevEq as _ idEq.
+      destruct prevEq as [_ [idEq _]].
       rewrite <- idEq in *.
       destruct (reqFn procR0 idx0).
       destruct stMatch as [_ [u1 [u2 _]]].
@@ -572,12 +584,12 @@ Section Bisim.
       intros r r2Eq; destruct r; rewrite r2Eq in *;
       intros r r1Eq; destruct r; rewrite r1Eq in *; simpl in *.
 
-      injection prev1 as d1Eq i1Eq.
+      destruct prev1 as [_ [i1Eq d1Eq]].
       rewrite <- i1Eq in *;
-      rewrite d1Eq in *; clear prev1 d1Eq.
-      injection prev2 as d2Eq i2Eq.
+      rewrite d1Eq in *; clear d1Eq.
+      destruct prev2 as [_ [i2Eq d2Eq]].
       rewrite <- i2Eq in *;
-      rewrite d2Eq in *; clear prev2 d2Eq.
+      rewrite d2Eq in *; clear d2Eq.
 
       simpl in *.
 
@@ -651,7 +663,7 @@ Section Bisim.
     Lemma allMatch:
       match atomicResp (getTrans getTransNext t), respFn t with
         | Some (Build_Resp c1 i1 d1), Some (Build_Resp c2 i2 d2) =>
-          i1 = i2 /\ c1 = c2 /\ d1 = d2
+          i1 = i2 /\ p_node c1 = p_node c2 /\ d1 = d2
         | None, Some _ => False
         | Some _, None => False
         | None, None => True
@@ -667,18 +679,19 @@ Section Bisim.
   End PrevMatch.
 
   Theorem obeysP: forall n,
-                    respFn n = atomicResp (getTrans getTransNext n).
+                    sameResp (respFn n) (atomicResp (getTrans getTransNext n)).
   Proof.
     apply strong_ind.
     intros t prevEq.
     pose proof (allMatch prevEq) as sth.
+    unfold sameResp.
     repeat destructAll;
     repeat f_equal; intuition.
   Qed.
 
   Definition getAtomicResp n := atomicResp (getTrans getTransNext n).
 
-  Theorem respEq n: respFn n = getAtomicResp n.
+  Theorem respEq n: sameResp (respFn n) (getAtomicResp n).
   Proof.
     apply (obeysP n).
   Qed.
