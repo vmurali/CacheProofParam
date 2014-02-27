@@ -60,7 +60,7 @@ Module FirstLevel (coh: Coherence).
             let c := p_node cProc in
             next nextS c <> next s c ->
             match respFn cl t with
-              | Some (Build_Resp cProc' _ _) => cProc' = cProc
+              | Some (Build_Resp cProc' _ _) => p_node cProc' = c
               | None => False
             end;
 
