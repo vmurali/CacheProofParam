@@ -8,7 +8,6 @@ Module FirstLevel (coh: Coherence).
   Section GivenState.
     Variable t: Time.
     Variable a: Addr.
-    Variable respFn: nat -> option Resp.
 
     Variable cl: CacheLocal.
 
@@ -25,14 +24,14 @@ Module FirstLevel (coh: Coherence).
             let p := node pCache in
             clean p ->
             (data s p a = initData a /\
-             forall t', t' < t -> noStore respFn t' a ) \/
+             forall t', t' < t -> noStore (respFn cl) t' a ) \/
             (exists tm,
                tm < t /\
-               match respFn tm with
+               match respFn cl tm with
                  | Some (Build_Resp cm im dm) =>
                    let (am, descQm, dtQm) := reqFn cm im in
                    data s p a = dtQm /\ am = a /\ descQm = St /\
-                   forall t', tm < t' < t -> noStore respFn t' a
+                   forall t', tm < t' < t -> noStore (respFn cl) t' a
                  | None => False
                end);
 
@@ -45,27 +44,33 @@ Module FirstLevel (coh: Coherence).
             compatible (state s c1 a) (state s c2 a);
 
         processReq:
-          forall cProc,
-            deqR cl cProc t ->
-            let c := p_node cProc in
-            let (a, op, d) := reqFn cProc (next s c) in
-            match op with
-              | Ld => le Sh (state s c a)
-              | St => state s c a = Mo
-            end;
-
+          match respFn cl t with
+            | Some (Build_Resp cProc _ _) =>
+              let c := p_node cProc in
+              let (a, op, d) := reqFn cProc (next s c) in
+              match op with
+                | Ld => le Sh (state s c a)
+                | St => state s c a = Mo
+              end
+            | None => True
+          end;
+        
         nextChange:
           forall cProc,
             let c := p_node cProc in
             next nextS c <> next s c ->
-            deqR cl cProc t;
+            match respFn cl t with
+              | Some (Build_Resp cProc' _ _) => cProc' = cProc
+              | None => False
+            end;
 
         noReqAgain:
-          forall cProc,
-            let c := p_node cProc in
-            deqR cl cProc t ->
-            next nextS c = S (next s c)
-            
+          match respFn cl t with
+            | Some (Build_Resp cProc _ _) =>
+              let c := p_node cProc in
+              next nextS c = S (next s c)
+            | None => True
+          end
       }.
   End GivenState.
 End FirstLevel.
