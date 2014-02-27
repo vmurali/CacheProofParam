@@ -2,6 +2,9 @@ Require Import BaseTree Tree.
 
 Set Implicit Arguments.
 
+Definition Time := nat.
+Definition Index := nat.
+
 Parameter Addr: Set.
 Parameter zero: Addr.
 Axiom decAddr: forall a1 a2:Addr, {a1 = a2} + {a1 <> a2}.
@@ -30,9 +33,9 @@ Record Req := { loc: Addr;
               }.
 
 Record Resp := { procR: Proc;
-                 idx: nat;
+                 idx: Index;
                  datum: Data
                }.
 
-Parameter reqFn: Proc -> nat -> Req.
+Parameter reqFn: Proc -> Time -> Req.
 Parameter initData: Addr -> Data.

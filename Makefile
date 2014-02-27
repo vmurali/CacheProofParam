@@ -1,4 +1,4 @@
-IGNORE:=
+IGNORE:=Test
 
 VS:=$(wildcard *.v)
 VS:=$(filter-out $(IGNORE:%=%.v),$(VS))

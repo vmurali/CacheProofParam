@@ -3,7 +3,7 @@ Require Import DataTypes StoreAtomicity Case NamedTrans Useful Tree.
 Set Implicit Arguments.
 
 Record State := { mem: Addr -> Data;
-                  next: Tree -> nat
+                  next: Tree -> Index
                 }.
 
 Inductive AtomicTrans s: State -> Set :=
@@ -25,8 +25,8 @@ Inductive AtomicTrans s: State -> Set :=
 | Idle: AtomicTrans s s.
 
 Section Bisim.
-  Variable respFn: nat -> option Resp.
-  Variable sa: StoreAtomic respFn.
+  Variable respFn: Time -> option Resp.
+  Variable sa: StoreAtomicity respFn.
 
   Definition AtomicList := TransList AtomicTrans (Build_State initData (fun t => 0)).
 
@@ -162,13 +162,13 @@ Section Bisim.
     assert (opts: next (getTransSt getTransNext (S t)) c =
                   next (getTransSt getTransNext t) c \/
                   next (getTransSt getTransNext (S t)) c >
-                  next (getTransSt getTransNext t) c) by omega.
+                  next (getTransSt getTransNext t) c) by (unfold Index; omega).
     destruct opts as [e|n].
     rewrite e in gt; destruct (IHt gt) as [t' [cond rest]]; exists t'; constructor;
     [ omega | intuition].
     assert (opts: next (getTransSt getTransNext t) c = i \/
                   next (getTransSt getTransNext t) c > i \/
-                  next (getTransSt getTransNext t) c < i) by omega.
+                  next (getTransSt getTransNext t) c < i) by (unfold Index; omega).
     destruct opts as [eq | [lt | gtt]].
     exists t; constructor.
     omega. 
@@ -480,7 +480,8 @@ Section Bisim.
       assocResp.
       rewrite caseR, caseR' in uniq; simpl in *.
       destruct prevEq as [_ [idEq _]].
-      assert (tEq: t = t') by (generalize allPrev idEq uniq; clear; intuition).
+      assert (tEq: t = t') by (generalize allPrev idEq uniq; clear;
+                               unfold Index; intuition).
       assert False by omega; intuition.
       intros caseR'; rewrite caseR' in *; intuition.
       intros caseR; simpl in *; intuition.
@@ -494,7 +495,7 @@ Section Bisim.
     Proof.
       pose proof nextLtFalse;
       pose proof nextGtFalse;
-      repeat destructAll; try (omega); intuition.
+      repeat destructAll; try (omega); unfold Index; intuition.
     Qed.
 
     Lemma loadMatch:
@@ -533,6 +534,7 @@ Section Bisim.
       specialize (prevEq tm_lt_t).
       assocResp.
       destruct no1 as [_ no1].
+      unfold noStore in *.
       specialize (no1 tm tm_lt_t).
       
       case_eq (respFn tm).
@@ -577,6 +579,8 @@ Section Bisim.
       clear prevEq.
       unfold matchAtomStore, noAtomStore, noCurrAtomStore in *;
         assocResp.
+
+      unfold noStore in *.
 
       case_eq (respFn tm1); case_eq (respFn tm2).
 
@@ -695,4 +699,7 @@ Section Bisim.
   Proof.
     apply (obeysP n).
   Qed.
+
 End Bisim.
+
+Print Assumptions respEq.
