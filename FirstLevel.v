@@ -1,21 +1,22 @@
-Require Import StoreAtomicity Coherence CacheLocal Tree DataTypes.
+Require Import StoreAtomicity Coherence CacheLocal Tree DataTypes Case Useful.
 
 Set Implicit Arguments.
 
-Module FirstLevel (coh: Coherence).
-  Module mkCl := mkCacheLocal coh.
-  Import coh mkCl.
-  Section GivenState.
+Section FirstLevel.
+  Variable State: Set.
+  Variable coh: Coherence State.
+
+  Variable a: Addr.
+
+  Variable cl: CacheLocal State.
+
+  Section Time.
     Variable t: Time.
-    Variable a: Addr.
-
-    Variable cl: CacheLocal.
-
     Definition s := getCacheState cl t.
     Definition nextS := getCacheState cl (S t).
 
     Definition clean p :=
-      le Sh (state s p a) /\ forall c, parent c p -> le (dir s p c a) Sh.
+      sle coh (Sh coh) (state s p a) /\ forall c, parent c p -> sle coh (dir s p c a) (Sh coh).
 
     Record FirstLevel :=
       {
@@ -41,7 +42,7 @@ Module FirstLevel (coh: Coherence).
             let c2 := node cCache2 in
             ~ descendent c1 c2 ->
             ~ descendent c2 c1 ->
-            compatible (state s c1 a) (state s c2 a);
+            compatible coh (state s c1 a) (state s c2 a);
 
         processReq:
           match respFn cl t with
@@ -49,15 +50,14 @@ Module FirstLevel (coh: Coherence).
               let c := p_node cProc in
               let (a, op, d) := reqFn cProc (next s c) in
               match op with
-                | Ld => le Sh (state s c a)
-                | St => state s c a = Mo
+                | Ld => sle coh (Sh coh) (state s c a)
+                | St => state s c a = Mo coh
               end
             | None => True
           end;
-        
+
         nextChange:
-          forall cProc,
-            let c := p_node cProc in
+          forall c,
             next nextS c <> next s c ->
             match respFn cl t with
               | Some (Build_Resp cProc' _ _) => p_node cProc' = c
@@ -72,5 +72,97 @@ Module FirstLevel (coh: Coherence).
             | None => True
           end
       }.
-  End GivenState.
+  End Time.
+
+  Variable fl: forall t, FirstLevel t.
+
+  Lemma increasingIdx: forall t1 t2 c, t1 <= t2 -> next (s t1) c <=
+                                                   next (s t2) c.
+  Proof.
+    intros t1 t2 c cond.
+    remember (t2-t1) as td.
+    assert (t2eq: t2 = t1 + td) by omega.
+    rewrite t2eq in *; clear t2eq Heqtd t2 cond.
+    unfold Time in *.
+    induction td.
+    assert (eq: t1 + 0 = t1) by omega; rewrite eq; omega.
+    assert (eq: t1 + S td = S (t1 + td)) by omega; rewrite eq; clear eq.
+    assert (step: next (s (t1 + td)) c <=
+                  next (nextS (t1 + td)) c).
+    pose proof (fl (t1 + td)) as [_ _ _ nextChange noReqAgain].
+    repeat destructAll.
+    destruct procR.
+    unfold p_node in *.
+    destruct proc.
+    simpl in *.
+    destruct (decTree node c).
+    rewrite <- e in *.
+    omega.
+    assert (opts: {next (nextS (t1 + td)) c = next (s (t1 + td)) c} +
+                  {next (nextS (t1 + td)) c <> next (s (t1 + td)) c}) by decide equality.
+    destruct opts.
+    omega.
+    specialize (nextChange _ n0); intuition.
+    specialize (nextChange c).
+    omega.
+    unfold nextS, s in *.
+    omega.
+  Qed.
+
+  Lemma incrOnResp: forall t1 t2, t1 < t2 -> match respFn cl t1 with
+                                               | Some (Build_Resp c1 i1 _) =>
+                                                 next (s t2) (p_node c1) > i1
+                                               | _ => True
+                                             end.
+  Proof.
+    intros t1 t2 t1_lt_t2.
+    assert (St1_le_t2: S t1 <= t2) by omega.
+    unfold s.
+    case_eq cl.
+    intros getSt respFn respFnIdx respFnData clEq; simpl.
+    pose proof (respFnIdx t1) as respIdx.
+    case_eq (respFn t1).
+    intros r respEq.
+    rewrite respEq in *.
+    case_eq r.
+    intros procR idx datum rEq.
+    rewrite rEq in *.
+    pose proof (increasingIdx (p_node procR) St1_le_t2) as sth.
+    pose proof (noReqAgain (fl t1)) as sth2.
+    unfold s, nextS in *.
+    rewrite clEq in *; simpl in *; rewrite respEq in *.
+    omega.
+    intuition.
+  Qed.
+
+  Theorem uniqRespLabels':
+    forall t1 t2, match respFn cl t1, respFn cl t2 with
+                    | Some (Build_Resp c1 i1 _), Some (Build_Resp c2 i2 _) =>
+                      p_node c1 = p_node c2 -> i1 = i2 -> t1 = t2
+                    | _, _ => True
+                  end.
+  Proof.
+    intros t1 t2.
+    assert (opts: t1 = t2 \/ t1 < t2 \/ t2 < t1) by (unfold Time in *; omega).
+    destruct opts as [eq| [lt|gt]].
+
+    repeat destructAll; intuition.
+
+    Ltac finish t1 t2 lt :=
+      pose proof (incrOnResp lt) as sth;
+      case_eq cl; intros getSt respFn respFnIdx respFnData clEq; simpl;
+      pose proof (respFnIdx t2) as respIdx;
+      unfold s in *; rewrite clEq in *; simpl in *;
+      repeat destructAll;
+      [ intros pEq idEq;
+        rewrite pEq, idEq in *;
+        omega |
+        intuition |
+        intuition |
+        intuition ].
+
+    finish t1 t2 lt.
+    finish t2 t1 gt.
+  Qed.
+
 End FirstLevel.

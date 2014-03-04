@@ -1,191 +1,103 @@
-Require Import Coq.Structures.Orders Coq.Structures.OrdersTac.
+Set Implicit Arguments.
 
-Module Type Coherence.
-  Parameter t: Set.
-  Parameter Mo Sh In: t.
+Record Coherence t := 
+  {
+    Mo: t;
+    Sh: t;
+    In: t;
+    slt: t -> t -> Prop;
+    compatible: t -> t -> Prop
+  }.
 
-  Definition eq (x y: t) := x = y.
-  Parameter lt: t -> t -> Prop.
-  Definition le (x y: t) := lt x y \/ x = y.
+Definition sle t (coh: Coherence t) x y:= slt coh x y \/ x = y.
 
-  Axiom eq_equiv: Equivalence eq.
-  Axiom lt_strorder: StrictOrder lt.
-  Axiom lt_compat: Proper (eq ==> eq ==> iff) lt.
-  Axiom le_lteq: forall x y, le x y <-> lt x y \/ eq x y.
-  Axiom lt_total: forall x y, lt x y \/ eq x y \/ lt y x.
-  Axiom maxMo: forall x, le x Mo.
-  Axiom maxMo': forall x, lt Mo x -> False.
-  Axiom minIn: forall x, le In x.
-  Axiom minIn': forall x, lt x In -> False.
+Inductive Msi := Mod | Sha | Inv.
 
-  Parameter compatible: t -> t -> Prop.
-End Coherence.
+Definition slt_Msi x y :=
+  match x, y with
+    | Inv, Inv => False
+    | Inv, _ => True
+    | Sha, Mod => True
+    | Sha, _ => False
+    | Mod, _ => False
+  end.
 
-Ltac coherence := repeat match goal with
-                           | [|- context [?fn]] => unfold fn
-                           | [H: context [?fn] |- _] => unfold fn in H
-                           | [|- forall x, _] => intro
-                           | [H: ?x = ?y |- _] => rewrite H in *
-                           | [x: ?P |- _] => destruct x
-                         end; auto; try discriminate.
+Definition compatible_Msi x y :=
+  match x, y with
+    | Inv, _ => True
+    | Sha, Mod => False
+    | Sha, _ => True
+    | Mod, Inv => True
+    | Mod, _ => False
+  end.
 
+Definition Coherence_Msi :=
+  Build_Coherence Mod Sha Inv slt_Msi compatible_Msi.
 
-Module Msi <: Coherence.
-  Inductive State := Mod | Sha | Inv.
+Inductive Mosi := Modi | Ow | Shar | Inva.
 
-  Definition t := State.
+Definition slt_Mosi x y :=
+  match x, y with
+    | Inva, Inva => False
+    | Inva, _ => True
+    | Shar, Modi => True
+    | Shar, Ow => True
+    | Shar, _ => False
+    | Ow, Modi => True
+    | Ow, _ => False
+    | Modi, _ => False
+  end.
 
-  Definition Mo := Mod.
-  Definition Sh := Sha.
-  Definition In := Inv.
+Definition compatible_Mosi x y :=
+  match x, y with
+    | Inva, _ => True
+    | Shar, Modi => False
+    | Shar, _ => True
+    | Ow, Modi => False
+    | Ow, Ow => False
+    | Ow, _ => True
+    | Modi, Inva => True
+    | Modi, _ => False
+  end.
 
-  Definition eq (x y : t) := x = y.
-  Definition lt (x y : t) := match x, y with
-                               | In, In => False
-                               | In, _ => True
-                               | Sh, Mo => True
-                               | Sh, _ => False
-                               | Mo, _ => False
-                             end.
-  Definition le (x y : t) := lt x y \/ x = y.
+Definition Coherence_Mosi :=
+  Build_Coherence Modi Shar Inva slt_Mosi compatible_Mosi.
 
-  Theorem eq_equiv: Equivalence eq.
-  Proof.
-    constructor; coherence.
-  Qed.
+Ltac solveCoh :=
+  solve [
+      unfold sle, Mo, Sh, In in *;
+      intros;
+      (repeat match goal with
+                | [x : Msi |- _] => destruct x
+                | [x : Mosi |- _] => destruct x
+              end); simpl in *; auto;
+      match goal with
+        | [_: context [?x = ?y] |- _] =>
+          match type of x with
+            | Msi => assert (x = y) by intuition; discriminate
+            | Mosi => assert (x = y) by intuition; discriminate
+          end
+      end].
 
-  Theorem lt_strorder: StrictOrder lt.
-  Proof.
-    constructor; coherence.
-  Qed.
-
-  Theorem lt_compat: Proper (eq ==> eq ==> iff) lt.
-  Proof.
-    constructor; coherence.
-  Qed.
-
-  Theorem le_lteq: forall x y, le x y <-> lt x y \/ eq x y.
-  Proof.
-    constructor; coherence.
-  Qed.
-
-  Theorem lt_total: forall x y, lt x y \/ eq x y \/ lt y x.
-  Proof.
-    coherence.
-  Qed.
-
-  Theorem maxMo: forall x, le x Mo.
-  Proof.
-    coherence.
-  Qed.
-
-  Theorem maxMo': forall x, lt Mo x -> False.
-  Proof.
-    coherence.
-  Qed.
-
-  Theorem minIn: forall x, le In x.
-  Proof.
-    coherence.
-  Qed.
-
-  Theorem minIn': forall x, lt x In -> False.
-  Proof.
-    coherence.
-  Qed.
-
-  Definition compatible x y :=
-    match x, y with
-      | In, _ => True
-      | Sh, Mo => False
-      | Sh, _ => True
-      | Mo, In => True
-      | Mo, _ => False
-    end.
-
-  Hint Resolve maxMo maxMo' minIn minIn'.
-  Hint Unfold compatible.
-End Msi.
-
-Module Mosi <: Coherence.
-  Inductive State := Mod | Ow | Sha | Inv.
-
-  Definition t := State.
-
-  Definition Mo := Mod.
-  Definition Sh := Sha.
-  Definition In := Inv.
-
-  Definition eq (x y : t) := x = y.
-  Definition lt (x y : t) := match x, y with
-                               | In, In => False
-                               | In, _ => True
-                               | Sh, Mo => True
-                               | Sh, Ow => True
-                               | Sh, _ => False
-                               | Ow, Mo => True
-                               | Ow, _ => False
-                               | Mo, _ => False
-                             end.
-  Definition le (x y : t) := lt x y \/ x = y.
-
-  Theorem eq_equiv: Equivalence eq.
-  Proof.
-    constructor; coherence.
-  Qed.
-
-  Theorem lt_strorder: StrictOrder lt.
-  Proof.
-    constructor; coherence.
-  Qed.
-
-  Theorem lt_compat: Proper (eq ==> eq ==> iff) lt.
-  Proof.
-    constructor; coherence.
-  Qed.
-
-  Theorem le_lteq: forall x y, le x y <-> lt x y \/ eq x y.
-  Proof.
-    constructor; coherence.
-  Qed.
-
-  Theorem lt_total: forall x y, lt x y \/ eq x y \/ lt y x.
-  Proof.
-    coherence.
-  Qed.
-
-  Theorem maxMo: forall x, le x Mo.
-  Proof.
-    coherence.
-  Qed.
-
-  Theorem maxMo': forall x, lt Mo x -> False.
-  Proof.
-    coherence.
-  Qed.
-
-  Theorem minIn: forall x, le In x.
-  Proof.
-    coherence.
-  Qed.
-
-  Theorem minIn': forall x, lt x In -> False.
-  Proof.
-    coherence.
-  Qed.
-
-  Definition compatible x y :=
-    match x, y with
-      | In, _ => True
-      | Sh, Mo => False
-      | Sh, _ => True
-      | Ow, Mo => False
-      | Ow, Ow => False
-      | Ow, _ => True
-      | Mo, In => True
-      | Mo, _ => False
-    end.
-
-  Hint Resolve maxMo maxMo' minIn minIn'.
-  Hint Unfold compatible.
-End Mosi.
+(*
+      match goal with
+        | [_: context [Mod = Sha] |- _] => assert (Mod = Sha) by intuition; discriminate
+        | [_: context [Mod = Inv] |- _] => assert (Mod = Inv) by intuition; discriminate
+        | [_: context [Sha = Mod] |- _] => assert (Sha = Mod) by intuition; discriminate
+        | [_: context [Sha = Inv] |- _] => assert (Sha = Inv) by intuition; discriminate
+        | [_: context [Inv = Mod] |- _] => assert (Inv = Mod) by intuition; discriminate
+        | [_: context [Inv = Sha] |- _] => assert (Inv = Sha) by intuition; discriminate
+        | [_: context [Modi = Shar] |- _] => assert (Modi = Shar) by intuition; discriminate
+        | [_: context [Modi = Ow] |- _] => assert (Modi = Ow) by intuition; discriminate
+        | [_: context [Modi = Inva] |- _] => assert (Modi = Inva) by intuition; discriminate
+        | [_: context [Ow = Shar] |- _] => assert (Ow = Shar) by intuition; discriminate
+        | [_: context [Ow = Modi] |- _] => assert (Ow = Modi) by intuition; discriminate
+        | [_: context [Ow = Inva] |- _] => assert (Ow = Inva) by intuition; discriminate
+        | [_: context [Shar = Modi] |- _] => assert (Shar = Modi) by intuition; discriminate
+        | [_: context [Shar = Ow] |- _] => assert (Shar = Ow) by intuition; discriminate
+        | [_: context [Shar = Inva] |- _] => assert (Shar = Inva) by intuition; discriminate
+        | [_: context [Inva = Modi] |- _] => assert (Inva = Modi) by intuition; discriminate
+        | [_: context [Inva = Ow] |- _] => assert (Inva = Ow) by intuition; discriminate
+        | [_: context [Inva = Shar] |- _] => assert (Inva = Shar) by intuition; discriminate
+      end ].
+*)
