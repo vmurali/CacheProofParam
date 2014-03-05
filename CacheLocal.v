@@ -28,9 +28,9 @@ Section CacheLocal.
                    end;
       respFnLdData: forall t,
                       match respFn t with
-                        | Some (Build_Resp c _ d) =>
-                          match desc (reqFn c t) with
-                            | Ld => d = data (getCacheState t) (p_node c) (loc (reqFn c t))
+                        | Some (Build_Resp c i d) =>
+                          match desc (reqFn c i) with
+                            | Ld => d = data (getCacheState t) (p_node c) (loc (reqFn c i))
                             | St => d = initData zero
                           end
                         | None => True
