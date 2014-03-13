@@ -21,6 +21,12 @@ Section CacheLocal.
     {
       getCacheState: Time -> CacheState;
       respFn: Time -> option Resp;
+
+      dataZero: data (getCacheState 0) = fun c a => initData a;
+      waitZero: wait (getCacheState 0) = fun c a => false;
+      dwaitZero: dwait (getCacheState 0) = fun p c a => false;
+      nextZero: next (getCacheState 0) = fun c => 0;
+
       respFnIdx: forall t,
                    match respFn t with
                      | Some (Build_Resp c i _) => i = next (getCacheState t) (p_node c)

@@ -121,7 +121,7 @@ Section FirstLevel.
       assert (St1_le_t2: S t1 <= t2) by omega.
       unfold s.
       case_eq cl.
-      intros getSt respFn respFnIdx respFnData clEq; simpl.
+      intros getSt respFn dZero wZero dwZero nextZero respFnIdx respFnData clEq; simpl.
       pose proof (respFnIdx t1) as respIdx.
       case_eq (respFn t1).
       intros r respEq.
@@ -152,7 +152,7 @@ Section FirstLevel.
 
       Ltac finish t1 t2 lt :=
         pose proof (incrOnResp lt) as sth;
-        case_eq cl; intros getSt respFn respFnIdx respFnData clEq; simpl;
+        case_eq cl; intros getSt respFn dZero wZero dwZero nextZero respFnIdx respFnData clEq; simpl;
         pose proof (respFnIdx t2) as respIdx;
         unfold s in *; rewrite clEq in *; simpl in *;
         repeat destructAll;
@@ -184,7 +184,7 @@ Section FirstLevel.
                         | _, _ => True
                       end).
       case_eq cl; simpl.
-      intros getSt respFn respFnIdx respDt clEq.
+      intros getSt respFn dZero wZero dwZero nextZero respFnIdx respDt clEq.
       case_eq (respFn t1).
       intros r respEq.
       case_eq r.
@@ -207,8 +207,97 @@ Section FirstLevel.
       
       repeat destructAll; intuition.
     Qed.
+
+    Lemma nextIncOrSame:
+      forall t c, next (getCacheState cl t) c = next (getCacheState cl (S t)) c \/
+                  S (next (getCacheState cl t) c) = next (getCacheState cl (S t)) c.
+    Proof.
+      intros t c.
+      destruct (fl t).
+      unfold s, nextS in *.
+      destruct cl.
+      simpl in *.
+      specialize (respFnIdx t).
+      assert (opts: next (getCacheState (S t)) c = next (getCacheState t) c \/
+                    next (getCacheState (S t)) c <> next (getCacheState t) c) by omega.
+      destruct opts.
+      intuition.
+      specialize (nextChange0 c H).
+      repeat destructAll.
+      pose proof (decTree c (p_node procR)) as [eq|neq].
+      rewrite eq in *.
+      intuition.
+      assert (c = p_node procR) by auto.
+      intuition.
+      rewrite nextChange0 in *.
+      auto.
+      intuition.
+    Qed.
+
+    Lemma allPrevIdx:
+      forall c2 t2 i1, i1 < next (getCacheState cl t2) c2 ->
+                       exists t1, t1 < t2 /\
+                                     match respFn cl t1 with
+                                       | Some (Build_Resp c1 i _) =>
+                                           p_node c1 = c2 /\ i = i1
+                                       | None => False
+                                     end.
+    Proof.
+      intros c2 t2 i1 i1LtNext.
+      induction t2.
+      destruct cl; simpl in *.
+      rewrite nextZero in *.
+      omega.
+      pose proof (nextIncOrSame t2 c2) as opts.
+      destruct opts.
+      rewrite H in *.
+      destruct (IHt2 i1LtNext) as [t1 [cond rest]].
+      exists t1; constructor; [omega | intuition].
+      assert (opts: i1 < next (getCacheState cl t2) c2 \/ i1 = next (getCacheState cl t2) c2) by omega.
+      destruct opts.
+      destruct (IHt2 H0) as [t1 [cond rest]].
+      exists t1; constructor; [omega | intuition].
+      exists t2.
+      constructor.
+      omega.
+      assert (ne: next (getCacheState cl (S t2)) c2 <> next (getCacheState cl t2) c2) by omega.
+      pose proof (nextChange (fl t2) c2 ne).
+      destruct cl; simpl in *.
+      specialize (respFnIdx t2).
+      repeat destructAll.
+      rewrite H1 in *.
+      rewrite <- H0 in *.
+      constructor; intuition.
+      intuition.
+    Qed.
+
+    Theorem allPrevious':
+      forall t2, match respFn cl t2 with
+                   | Some (Build_Resp c2 i2 _) =>
+                       forall i1, i1 < i2 -> exists t1, t1 < t2 /\
+                                                           match respFn cl t1 with
+                                                             | Some (Build_Resp c1 i _) =>
+                                                                 p_node c1 = p_node c2 /\ i = i1
+                                                             | None => False
+                                                           end
+                   | _ => True
+                 end.
+    Proof.
+      case_eq cl.
+      simpl in *.
+      intros getCState respFn dZerp wZero dwZero nextZero respFnIdx respFnLdData clEq.
+      intros t2.
+      pose proof (respFnIdx t2) as u1.
+      repeat destructAll.
+      rewrite u1.
+      pose proof (allPrevIdx (p_node procR) t2).
+      rewrite clEq in H; simpl in H.
+      intuition.
+      intuition.
+    Qed.
   End Addr.
 
+(*
   Section Sa.
     Variable fl: forall a t, FirstLevel a t.
     Theorem storeAtomicity:
@@ -248,5 +337,6 @@ Section FirstLevel.
       destruct desc.
       simpl in *.
     case_eq cl; intros; simpl.
+*)
 
 End FirstLevel.
