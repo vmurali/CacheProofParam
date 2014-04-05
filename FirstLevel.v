@@ -8,107 +8,106 @@ Section FirstLevel.
 
   Variable cl: CacheLocal State.
 
+  Definition s t := getCacheState cl t.
+  Definition nextS t := getCacheState cl (S t).
+
+  Definition clean a t p :=
+    sle coh (Sh coh) (state (s t) p a) /\ forall c, parent c p -> sle coh (dir (s t) p c a) (Sh coh).
+
+
+  Record FirstLevel :=
+    {
+      latestValue:
+        forall t a pCache,
+          let p := node pCache in
+          clean a t p ->
+          (data (s t) p a = initData a /\
+           forall t', t' < t -> noStore (respFn cl) t' a ) \/
+          (exists tm,
+             tm < t /\
+             match respFn cl tm with
+               | Some (Build_Resp cm im dm) =>
+                 let (am, descQm, dtQm) := reqFn cm im in
+                 data (s t) p a = dtQm /\ am = a /\ descQm = St /\
+                 forall t', tm < t' < t -> noStore (respFn cl) t' a
+               | None => False
+             end);
+
+      processReq:
+        forall t, 
+        match respFn cl t with
+          | Some (Build_Resp cProc _ _) =>
+            let c := p_node cProc in
+            let (a, op, d) := reqFn cProc (next (s t) c) in
+            match op with
+              | Ld => sle coh (Sh coh) (state (s t) c a)
+              | St => state (s t) c a = Mo coh
+            end
+          | None => True
+        end;
+
+      nextChange:
+        forall t c,
+          next (nextS t) c <> next (s t) c ->
+          match respFn cl t with
+            | Some (Build_Resp cProc' _ _) => p_node cProc' = c
+            | None => False
+          end;
+
+      noReqAgain:
+        forall t,
+        match respFn cl t with
+          | Some (Build_Resp cProc _ _) =>
+            let c := p_node cProc in
+            next (nextS t) c = S (next (s t) c)
+          | None => True
+        end
+    }.
+
+  Ltac expandCl cl :=
+    destruct cl as [getCacheState respFn dataZero waitZero dwaitZero nextZero respFnIdx respFnLdData];
+    simpl in *.
+
+  Ltac expandFl fl :=
+    destruct fl as [latestValue processReq nextChange noReqAgain];
+    unfold clean, s, nextS in *.
+
+  Ltac expandClFl cl fl :=
+    expandFl fl;
+    expandCl cl.
 
   Section Addr.
     Variable a: Addr.
 
-    Section Time.
-      Variable t: Time.
-      Definition s := getCacheState cl t.
-      Definition nextS := getCacheState cl (S t).
+    Variable fl: FirstLevel.
 
-      Definition clean p :=
-        sle coh (Sh coh) (state s p a) /\ forall c, parent c p -> sle coh (dir s p c a) (Sh coh).
-
-      Record FirstLevel :=
-        {
-          latestValue:
-            forall pCache,
-              let p := node pCache in
-              clean p ->
-              (data s p a = initData a /\
-               forall t', t' < t -> noStore (respFn cl) t' a ) \/
-              (exists tm,
-                 tm < t /\
-                 match respFn cl tm with
-                   | Some (Build_Resp cm im dm) =>
-                     let (am, descQm, dtQm) := reqFn cm im in
-                     data s p a = dtQm /\ am = a /\ descQm = St /\
-                     forall t', tm < t' < t -> noStore (respFn cl) t' a
-                   | None => False
-                 end);
-
-          nonAncestorCompatible:
-            forall cCache1 cCache2: Cache,
-              let c1 := node cCache1 in
-              let c2 := node cCache2 in
-              ~ descendent c1 c2 ->
-              ~ descendent c2 c1 ->
-              compatible coh (state s c1 a) (state s c2 a);
-
-          processReq:
-            match respFn cl t with
-              | Some (Build_Resp cProc _ _) =>
-                let c := p_node cProc in
-                let (a, op, d) := reqFn cProc (next s c) in
-                match op with
-                  | Ld => sle coh (Sh coh) (state s c a)
-                  | St => state s c a = Mo coh
-                end
-              | None => True
-            end;
-
-          nextChange:
-            forall c,
-              next nextS c <> next s c ->
-              match respFn cl t with
-                | Some (Build_Resp cProc' _ _) => p_node cProc' = c
-                | None => False
-              end;
-
-          noReqAgain:
-            match respFn cl t with
-              | Some (Build_Resp cProc _ _) =>
-                let c := p_node cProc in
-                next nextS c = S (next s c)
-              | None => True
-            end
-        }.
-    End Time.
-
-    Variable fl: forall t, FirstLevel t.
-
-    Lemma increasingIdx: forall t1 t2 c, t1 <= t2 -> next (s t1) c <=
-                                                     next (s t2) c.
+    Lemma nextIncOrSame:
+      forall t c, next (getCacheState cl t) c = next (getCacheState cl (S t)) c \/
+                  next (getCacheState cl (S t)) c = S (next (getCacheState cl t) c).
     Proof.
-      intros t1 t2 c cond.
-      remember (t2-t1) as td.
-      assert (t2eq: t2 = t1 + td) by omega.
-      rewrite t2eq in *; clear t2eq Heqtd t2 cond.
-      unfold Time in *.
-      induction td.
-      assert (eq: t1 + 0 = t1) by omega; rewrite eq; omega.
-      assert (eq: t1 + S td = S (t1 + td)) by omega; rewrite eq; clear eq.
-      assert (step: next (s (t1 + td)) c <=
-                    next (nextS (t1 + td)) c).
-      pose proof (fl (t1 + td)) as [_ _ _ nextChange noReqAgain].
-      repeat destructAll.
-      destruct procR.
-      unfold p_node in *.
-      destruct proc.
-      simpl in *.
-      destruct (decTree node c).
-      rewrite <- e in *.
+      intros t c.
+      expandClFl cl fl.
+      assert (opts: next (getCacheState t) c = next (getCacheState (S t)) c \/
+                    next (getCacheState (S t)) c <> next (getCacheState t) c) by omega.
+      specialize (nextChange t c).
+      specialize (noReqAgain t).
+      destruct opts; repeat destructAll;
+      try match goal with
+            | [H: (next (getCacheState (S t)) c <> next (getCacheState t) c) |- _ ] =>
+                specialize (nextChange H); rewrite nextChange in *
+          end;
+      intuition.
+    Qed.
+
+    Lemma increasingIdx: forall t1 t2, t1 <= t2 -> forall c, next (s t1) c <=
+                                                             next (s t2) c.
+    Proof.
+      intros t1 t2 cond c.
+      diff t1 t2 cond.
+      unfold s in *.
+      induction td; simplArith.
       omega.
-      assert (opts: {next (nextS (t1 + td)) c = next (s (t1 + td)) c} +
-                    {next (nextS (t1 + td)) c <> next (s (t1 + td)) c}) by decide equality.
-      destruct opts.
-      omega.
-      specialize (nextChange _ n0); intuition.
-      specialize (nextChange c).
-      omega.
-      unfold nextS, s in *.
-      omega.
+      destruct (nextIncOrSame (t1 + td) c) as [eq|neq]; omega.
     Qed.
 
     Lemma incrOnResp: forall t1 t2, t1 < t2 -> match respFn cl t1 with
@@ -119,22 +118,16 @@ Section FirstLevel.
     Proof.
       intros t1 t2 t1_lt_t2.
       assert (St1_le_t2: S t1 <= t2) by omega.
-      unfold s.
-      case_eq cl.
-      intros getSt respFn dZero wZero dwZero nextZero respFnIdx respFnData clEq; simpl.
-      pose proof (respFnIdx t1) as respIdx.
-      case_eq (respFn t1).
-      intros r respEq.
-      rewrite respEq in *.
-      case_eq r.
-      intros procR idx datum rEq.
-      rewrite rEq in *.
-      pose proof (increasingIdx (p_node procR) St1_le_t2) as sth.
-      pose proof (noReqAgain (fl t1)) as sth2.
-      unfold s, nextS in *.
-      rewrite clEq in *; simpl in *; rewrite respEq in *.
-      omega.
-      intuition.
+      pose proof (increasingIdx St1_le_t2) as u1.
+      unfold s in *.
+      expandClFl cl fl.
+      specialize (noReqAgain t1).
+      specialize (respFnIdx t1).
+      repeat destructAll;
+        match goal with
+          | [c: Proc |- _] => specialize (u1 (p_node c)); omega
+          | _ => intuition
+        end.
     Qed.
 
     Theorem uniqRespLabels':
@@ -144,30 +137,26 @@ Section FirstLevel.
                       | _, _ => True
                     end.
     Proof.
-      intros t1 t2.
-      assert (opts: t1 = t2 \/ t1 < t2 \/ t2 < t1) by (unfold Time in *; omega).
-      destruct opts as [eq| [lt|gt]].
-
-      repeat destructAll; intuition.
-
-      Ltac finish t1 t2 lt :=
-        pose proof (incrOnResp lt) as sth;
-        case_eq cl; intros getSt respFn dZero wZero dwZero nextZero respFnIdx respFnData clEq; simpl;
-        pose proof (respFnIdx t2) as respIdx;
-        unfold s in *; rewrite clEq in *; simpl in *;
+      Ltac finish incrOnResp respFnIdx t2 lt :=
+        specialize (incrOnResp _ _ lt);
+        specialize (respFnIdx t2);
         repeat destructAll;
-        [ intros pEq idEq;
-          rewrite pEq, idEq in *;
-          omega |
-          intuition |
-          intuition |
-          intuition ].
+        match goal with
+          | [|- True] => intuition
+          | _ => try (intros pEq idEq; rewrite pEq, idEq in *; omega)
+        end.
 
-      finish t1 t2 lt.
-      finish t2 t1 gt.
+      intros t1 t2.
+      pose proof @incrOnResp as incr;
+      assert (opts: t1 = t2 \/ t1 < t2 \/ t2 < t1) by (unfold Time in *; omega).
+      expandClFl cl fl.
+      destruct opts as [eq| [lt|gt]].
+      repeat destructAll; intuition.
+      finish incr respFnIdx t2 lt.
+      finish incr respFnIdx t1 gt.
     Qed.
 
-    Theorem localOrdering:
+    Theorem localOrdering':
       forall t1 t2, match respFn cl t1, respFn cl t2 with
                       | Some (Build_Resp c1 i1 _), Some (Build_Resp c2 i2 _) =>
                         p_node c1 = p_node c2 -> i1 > i2 -> t1 > t2
@@ -176,66 +165,22 @@ Section FirstLevel.
     Proof.
       intros t1 t2.
       assert (opts: t1 > t2 \/ t1 <= t2) by (unfold Time in *; omega).
-      destruct opts as [ez | t1_le_t2].
+      destruct opts as [lt|le].
       repeat destructAll; intuition.
-      assert (contra: match respFn cl t1, respFn cl t2 with
-                        | Some (Build_Resp c1 i1 _), Some (Build_Resp c2 i2 _) =>
-                          p_node c1 = p_node c2 -> i1 <= i2
-                        | _, _ => True
-                      end).
-      case_eq cl; simpl.
-      intros getSt respFn dZero wZero dwZero nextZero respFnIdx respDt clEq.
-      case_eq (respFn t1).
-      intros r respEq.
-      case_eq r.
-      intros procR idx datum rEq.
-      case_eq (respFn t2).
-      intros r0 resp0Eq.
-      case_eq r0.
-      intros procR0 idx0 datum0 r0Eq.
-      pose proof (increasingIdx (p_node procR) t1_le_t2) as idxLe.
-      unfold s in idxLe.
-      rewrite clEq in idxLe; simpl in *.
-      pose proof (respFnIdx t1) as sth1.
-      pose proof (respFnIdx t2) as sth2.
-      rewrite respEq, resp0Eq, rEq, r0Eq in *.
-      intros pEq.
-      rewrite <- pEq in sth2.
-      omega.
-      intuition.
-      intuition.
-      
-      repeat destructAll; intuition.
-    Qed.
-
-    Lemma nextIncOrSame:
-      forall t c, next (getCacheState cl t) c = next (getCacheState cl (S t)) c \/
-                  S (next (getCacheState cl t) c) = next (getCacheState cl (S t)) c.
-    Proof.
-      intros t c.
-      destruct (fl t).
+      pose proof (increasingIdx le) as incr.
       unfold s, nextS in *.
-      destruct cl.
-      simpl in *.
-      specialize (respFnIdx t).
-      assert (opts: next (getCacheState (S t)) c = next (getCacheState t) c \/
-                    next (getCacheState (S t)) c <> next (getCacheState t) c) by omega.
-      destruct opts.
-      intuition.
-      specialize (nextChange0 c H).
-      repeat destructAll.
-      pose proof (decTree c (p_node procR)) as [eq|neq].
-      rewrite eq in *.
-      intuition.
-      assert (c = p_node procR) by auto.
-      intuition.
-      rewrite nextChange0 in *.
-      auto.
-      intuition.
+      expandCl cl.
+      pose proof (respFnIdx t1) as r1.
+      pose proof (respFnIdx t2) as r2.
+      repeat destructAll; intros;
+      match goal with
+        | [H: p_node ?p1 = p_node ?p2 |- _] => rewrite H in *; specialize (incr (p_node p2)); omega
+        | _ => intuition
+      end.
     Qed.
 
     Lemma allPrevIdx:
-      forall c2 t2 i1, i1 < next (getCacheState cl t2) c2 ->
+      forall t2 c2 i1, i1 < next (getCacheState cl t2) c2 ->
                        exists t1, t1 < t2 /\
                                      match respFn cl t1 with
                                        | Some (Build_Resp c1 i _) =>
@@ -243,32 +188,33 @@ Section FirstLevel.
                                        | None => False
                                      end.
     Proof.
-      intros c2 t2 i1 i1LtNext.
+      Ltac finishPrev iht t2 cond :=
+        destruct (iht cond);
+        match goal with
+          | [H: context [?x < t2] |- _] => exists x; try omega; intuition
+        end.
+
+      intros t2 c2 i1 i1LtNext.
       induction t2.
-      destruct cl; simpl in *.
-      rewrite nextZero in *.
-      omega.
+      rewrite nextZero in *; omega.
       pose proof (nextIncOrSame t2 c2) as opts.
-      destruct opts.
-      rewrite H in *.
-      destruct (IHt2 i1LtNext) as [t1 [cond rest]].
-      exists t1; constructor; [omega | intuition].
-      assert (opts: i1 < next (getCacheState cl t2) c2 \/ i1 = next (getCacheState cl t2) c2) by omega.
-      destruct opts.
-      destruct (IHt2 H0) as [t1 [cond rest]].
-      exists t1; constructor; [omega | intuition].
-      exists t2.
-      constructor.
-      omega.
-      assert (ne: next (getCacheState cl (S t2)) c2 <> next (getCacheState cl t2) c2) by omega.
-      pose proof (nextChange (fl t2) c2 ne).
-      destruct cl; simpl in *.
+      expandClFl cl fl.
+      destruct opts as [same | inc].
+      rewrite same in *.
+      finishPrev IHt2 t2 i1LtNext.
+
+      assert (opts: i1 < next (getCacheState t2) c2 \/ i1 = next (getCacheState t2) c2) by omega;
+      destruct opts as [lt | same].
+      finishPrev IHt2 t2 lt.
+
+      rewrite same in *.
+      assert (ne: next (getCacheState (S t2)) c2 <> next (getCacheState t2) c2) by omega.
+      specialize (nextChange t2 c2 ne).
       specialize (respFnIdx t2).
-      repeat destructAll.
-      rewrite H1 in *.
-      rewrite <- H0 in *.
-      constructor; intuition.
-      intuition.
+      exists t2.
+      repeat destructAll; try omega; match goal with
+                                       | [H: p_node ?p = c2 |- _ ] => rewrite <- H in *; intuition
+                                     end.
     Qed.
 
     Theorem allPrevious':
@@ -283,24 +229,46 @@ Section FirstLevel.
                    | _ => True
                  end.
     Proof.
-      case_eq cl.
-      simpl in *.
-      intros getCState respFn dZerp wZero dwZero nextZero respFnIdx respFnLdData clEq.
       intros t2.
-      pose proof (respFnIdx t2) as u1.
-      repeat destructAll.
-      rewrite u1.
-      pose proof (allPrevIdx (p_node procR) t2).
-      rewrite clEq in H; simpl in H.
-      intuition.
-      intuition.
+      pose proof (allPrevIdx t2) as u1.
+      expandClFl cl fl.
+      specialize (respFnIdx t2).
+      repeat destructAll;
+      try match goal with
+            | [p: Proc |- _] => specialize (u1 (p_node p))
+          end; intuition.
     Qed.
   End Addr.
 
-(*
   Section Sa.
-    Variable fl: forall a t, FirstLevel a t.
-    Theorem storeAtomicity:
+    Variable fl: FirstLevel.
+
+    Lemma leafProp: forall p c, ~ parent c (node (proc p)).
+    Proof.
+      unfold not; intros p c c_p.
+      destruct p.
+      unfold parent, leaf in *.
+      simpl in *.
+      repeat destructAll; simpl in *; intuition.
+    Qed.
+
+    Lemma cleanProp:
+      forall t p coh loc,
+        sle coh (Sh coh) (state (getCacheState cl t) (node (proc p)) loc) ->
+        sle coh (Sh coh) (state (getCacheState cl t) (node (proc p)) loc) /\
+        (forall c, parent c (node (proc p)) ->
+                   sle coh (dir (getCacheState cl t) (node (proc p)) c loc) (Sh coh)).
+    Proof.
+      intros.
+      pose proof (leafProp p) as leafProp.
+      constructor;
+      intros;
+        (try match goal with
+               | [c: Tree |- _] => specialize (leafProp c)
+             end); intuition.
+    Qed.
+
+    Theorem storeAtomicity':
       forall t,
         match respFn cl t with
           | Some (Build_Resp c i d) =>
@@ -323,20 +291,35 @@ Section FirstLevel.
         end.
     Proof.
       intros t.
-      unfold s, nextS in *; 
-        destruct cl; simpl in *.
+      pose proof (cleanProp t) as cleanProp.
+      expandClFl cl fl.
+      specialize (respFnIdx t).
       specialize (respFnLdData t).
-      clear respFnIdx.
+      specialize (latestValue t).
+      specialize (processReq t).
+      unfold p_node in respFnLdData.
       destructAll.
       destructAll.
-      simpl in *.
-      destruct (reqFn procR idx).
-      simpl in *.
-      specialize (fl loc t).
-      destruct fl as [lv _ pr _ _].
-      destruct desc.
-      simpl in *.
-    case_eq cl; intros; simpl.
-*)
+      rewrite <- respFnIdx in processReq.
+      destructAll.
+      destructAll.
 
+      specialize (latestValue loc (proc procR) (cleanProp _ _ _ processReq));
+      simpl in *; rewrite <- respFnLdData in *;
+      intuition.
+
+      intuition.
+
+      intuition.
+    Qed.
+
+    Theorem fullStoreAtomicity: StoreAtomicity (respFn cl).
+    Proof.
+      pose proof (uniqRespLabels' fl) as uniqRespLabels.
+      pose proof (localOrdering' fl) as localOrdering.
+      pose proof (allPrevious' fl) as allPrevious.
+      pose proof storeAtomicity' as storeAtomicity.
+      constructor; intuition.
+    Qed.
+  End Sa.
 End FirstLevel.

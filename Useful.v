@@ -8,6 +8,20 @@ Ltac destructAll :=
     | [_:context [match ?P with _ => _ end] |- _] => destruct P
   end.
 
+Ltac diff t1 t2 cond :=
+  remember (t2 - t1) as td eqn:Heqtd;
+  assert (t2eq: t2 = t1 + td) by omega;
+  rewrite t2eq in *; clear t2eq Heqtd t2 cond.
+
+Ltac simplArith :=
+  repeat match goal with
+           | [|- context [?x + 0]] => assert (H: x+0 = x) by omega; rewrite H; clear H
+           | [|- context [?x + S ?y]] => assert (H: x+S y = S(x+y)) by omega; rewrite H; clear H
+           | [H: context [?x + 0] |- _ ] => assert (L: x+0=x) by omega; rewrite L in H; clear L
+           | [H: context [?x + S ?y]|- _ ] => assert (L: x+S y=S(x+y)) by omega; rewrite L in H; clear L
+         end.
+                                                                   
+
 Section StrongInd1.
   Variable P: nat -> Type.
   Hypothesis case_0: P 0.
