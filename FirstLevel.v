@@ -2,6 +2,10 @@ Require Import StoreAtomicity Coherence CacheLocal Tree DataTypes Case Useful.
 
 Set Implicit Arguments.
 
+Ltac expandCl cl :=
+  destruct cl as [getCacheState respFn dataZero waitZero dwaitZero nextZero respFnIdx respFnLdData];
+  simpl in *.
+
 Section FirstLevel.
   Variable State: Set.
   Variable coh: Coherence State.
@@ -14,6 +18,13 @@ Section FirstLevel.
   Definition clean a t p :=
     sle coh (Sh coh) (state (s t) p a) /\ forall c, parent c p -> sle coh (dir (s t) p c a) (Sh coh).
 
+  Ltac expandFl fl :=
+    destruct fl as [latestValue processReq nextChange noReqAgain];
+    unfold clean, s, nextS in *.
+
+  Ltac expandClFl cl fl :=
+    expandFl fl;
+    expandCl cl.
 
   Record FirstLevel :=
     {
@@ -64,18 +75,6 @@ Section FirstLevel.
           | None => True
         end
     }.
-
-  Ltac expandCl cl :=
-    destruct cl as [getCacheState respFn dataZero waitZero dwaitZero nextZero respFnIdx respFnLdData];
-    simpl in *.
-
-  Ltac expandFl fl :=
-    destruct fl as [latestValue processReq nextChange noReqAgain];
-    unfold clean, s, nextS in *.
-
-  Ltac expandClFl cl fl :=
-    expandFl fl;
-    expandCl cl.
 
   Section Addr.
     Variable a: Addr.
