@@ -47,7 +47,8 @@ Section FirstLevel.
         end;
 
       nextChange:
-        forall t c,
+        forall t p,
+          let c := p_node p in
           next (nextS t) c <> next (s t) c ->
           match respFn cl t with
             | Some (Build_Resp cProc' _ _) => p_node cProc' = c
@@ -82,14 +83,16 @@ Section FirstLevel.
     Variable fl: FirstLevel.
 
     Lemma nextIncOrSame:
-      forall t c, next (getCacheState cl t) c = next (getCacheState cl (S t)) c \/
-                  next (getCacheState cl (S t)) c = S (next (getCacheState cl t) c).
+      forall t p,
+        let c := p_node p in
+        next (getCacheState cl t) c = next (getCacheState cl (S t)) c \/
+        next (getCacheState cl (S t)) c = S (next (getCacheState cl t) c).
     Proof.
-      intros t c.
+      intros t p c.
       expandClFl cl fl.
       assert (opts: next (getCacheState t) c = next (getCacheState (S t)) c \/
                     next (getCacheState (S t)) c <> next (getCacheState t) c) by omega.
-      specialize (nextChange t c).
+      specialize (nextChange t p).
       specialize (noReqAgain t).
       destruct opts; repeat destructAll;
       try match goal with
@@ -99,15 +102,17 @@ Section FirstLevel.
       intuition.
     Qed.
 
-    Lemma increasingIdx: forall t1 t2, t1 <= t2 -> forall c, next (s t1) c <=
-                                                             next (s t2) c.
+    Lemma increasingIdx: forall t1 t2, t1 <= t2 -> forall p,
+                                                     let c := p_node p in
+                                                     next (s t1) c <=
+                                                     next (s t2) c.
     Proof.
-      intros t1 t2 cond c.
+      intros t1 t2 cond p c.
       diff t1 t2 cond.
       unfold s in *.
       induction td; simplArith.
       omega.
-      destruct (nextIncOrSame (t1 + td) c) as [eq|neq]; omega.
+      destruct (nextIncOrSame (t1 + td) p) as [eq|neq]; unfold c in *; omega.
     Qed.
 
     Lemma incrOnResp: forall t1 t2, t1 < t2 -> match respFn cl t1 with
@@ -125,7 +130,7 @@ Section FirstLevel.
       specialize (respFnIdx t1).
       repeat destructAll;
         match goal with
-          | [c: Proc |- _] => specialize (u1 (p_node c)); omega
+          | [c: Proc |- _] => specialize (u1 c); omega
           | _ => intuition
         end.
     Qed.
@@ -174,19 +179,22 @@ Section FirstLevel.
       pose proof (respFnIdx t2) as r2.
       repeat destructAll; intros;
       match goal with
-        | [H: p_node ?p1 = p_node ?p2 |- _] => rewrite H in *; specialize (incr (p_node p2)); omega
+        | [H: p_node ?p1 = p_node ?p2 |- _] => rewrite H in *;
+                                               specialize (incr p2); omega
         | _ => intuition
       end.
     Qed.
 
     Lemma allPrevIdx:
-      forall t2 c2 i1, i1 < next (getCacheState cl t2) c2 ->
-                       exists t1, t1 < t2 /\
-                                     match respFn cl t1 with
-                                       | Some (Build_Resp c1 i _) =>
-                                           p_node c1 = c2 /\ i = i1
-                                       | None => False
-                                     end.
+      forall t2 p2 i1,
+        let c2 := p_node p2 in
+        i1 < next (getCacheState cl t2) c2 ->
+        exists t1, t1 < t2 /\
+                   match respFn cl t1 with
+                     | Some (Build_Resp c1 i _) =>
+                         p_node c1 = c2 /\ i = i1
+                     | None => False
+                   end.
     Proof.
       Ltac finishPrev iht t2 cond :=
         destruct (iht cond);
@@ -194,26 +202,28 @@ Section FirstLevel.
           | [H: context [?x < t2] |- _] => exists x; try omega; intuition
         end.
 
-      intros t2 c2 i1 i1LtNext.
+      intros t2 p2 i1 c2 i1LtNext.
       induction t2.
       rewrite nextZero in *; omega.
-      pose proof (nextIncOrSame t2 c2) as opts.
+      unfold c2 in *.
+      pose proof (nextIncOrSame t2 p2) as opts.
       expandClFl cl fl.
       destruct opts as [same | inc].
       rewrite same in *.
       finishPrev IHt2 t2 i1LtNext.
 
-      assert (opts: i1 < next (getCacheState t2) c2 \/ i1 = next (getCacheState t2) c2) by omega;
+      assert (opts: i1 < next (getCacheState t2) (p_node p2) \/ i1 = next (getCacheState t2) (p_node p2))
+             by omega;
       destruct opts as [lt | same].
       finishPrev IHt2 t2 lt.
 
       rewrite same in *.
-      assert (ne: next (getCacheState (S t2)) c2 <> next (getCacheState t2) c2) by omega.
-      specialize (nextChange t2 c2 ne).
+      assert (ne: next (getCacheState (S t2)) (p_node p2) <> next (getCacheState t2) (p_node p2)) by omega.
+      specialize (nextChange t2 p2 ne).
       specialize (respFnIdx t2).
       exists t2.
       repeat destructAll; try omega; match goal with
-                                       | [H: p_node ?p = c2 |- _ ] => rewrite <- H in *; intuition
+                                       | [H: p_node ?p = p_node p2 |- _ ] => rewrite <- H in *; intuition
                                      end.
     Qed.
 
@@ -315,11 +325,8 @@ Section FirstLevel.
 
     Theorem fullStoreAtomicity: StoreAtomicity (respFn cl).
     Proof.
-      pose proof (uniqRespLabels' fl) as uniqRespLabels.
-      pose proof (localOrdering' fl) as localOrdering.
-      pose proof (allPrevious' fl) as allPrevious.
-      pose proof storeAtomicity' as storeAtomicity.
-      constructor; intuition.
+      apply (Build_StoreAtomicity (respFn cl) (uniqRespLabels' fl) (localOrdering' fl)
+                                  (allPrevious' fl) storeAtomicity').
     Qed.
   End Sa.
 End FirstLevel.
