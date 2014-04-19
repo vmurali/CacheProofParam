@@ -1,4 +1,4 @@
-Require Import DataTypes Tree.
+Require Import DataTypes Coherence Tree.
 
 Set Implicit Arguments.
 
@@ -17,11 +17,19 @@ Section CacheLocal.
       next: Tree -> nat
     }.
 
+  Variable coh: Coherence State.
+
   Record CacheLocal :=
     {
       getCacheState: Time -> CacheState;
       respFn: Time -> option Resp;
 
+      stateZero: state (getCacheState 0) = fun c a =>
+                   match decTree c hier with
+                     | left _ => Mo coh
+                     | right _ => In coh
+                   end;
+      dirZero: dir (getCacheState 0) = fun p c a => In coh;
       dataZero: data (getCacheState 0) = fun c a => initData a;
       waitZero: wait (getCacheState 0) = fun c a => false;
       dwaitZero: dwait (getCacheState 0) = fun p c a => false;

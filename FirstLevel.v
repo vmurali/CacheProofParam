@@ -3,14 +3,15 @@ Require Import StoreAtomicity Coherence CacheLocal Tree DataTypes Case Useful.
 Set Implicit Arguments.
 
 Ltac expandCl cl :=
-  destruct cl as [getCacheState respFn dataZero waitZero dwaitZero nextZero respFnIdx respFnLdData];
+  destruct cl as [getCacheState respFn stateZero dirZero dataZero
+                  waitZero dwaitZero nextZero respFnIdx respFnLdData];
   simpl in *.
 
 Section FirstLevel.
   Variable State: Set.
   Variable coh: Coherence State.
 
-  Variable cl: CacheLocal State.
+  Variable cl: CacheLocal coh.
 
   Definition s t := getCacheState cl t.
   Definition nextS t := getCacheState cl (S t).
