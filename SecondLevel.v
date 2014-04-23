@@ -2,41 +2,81 @@ Require Import StoreAtomicity FirstLevel Coherence CacheLocal Tree DataTypes Cas
 
 Set Implicit Arguments.
 
-Section SecondLevel.
-  Variable State: Set.
-  Variable coh: Coherence State.
+Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
+  Definition clean a t p :=
+    le Sh (state t p a) /\ forall c, parent c p -> le (dir t p c a) Sh.
 
-  Variable cl: CacheLocal coh.
+  Definition noStoreData d a t :=
+    d = initData a /\ forall t', t' < t -> noStore respFn t' a.
 
-  Record SecondLevel :=
-    {
-      nonAncestorCompatible:
-        forall t a p1 p2,
-          let c1 := node p1 in
-          let c2 := node p2 in
-          ~ descendent c1 c2 ->
-          ~ descendent c2 c1 ->
-          compatible coh (state (s cl t) c1 a) (state (s cl t) c2 a);
+  Definition isStoreData d a t :=
+    exists tm, tm < t /\ match respFn tm with
+                           | Some (Build_Resp cm im dm) =>
+                               let (am, descQm, dtQm) := reqFn cm im in
+                                 d = dtQm /\ am = a /\ descQm = St /\
+                                 forall t', tm < t' < t -> noStore respFn t' a
+                           | None => False
+                         end.
 
-      dataFromClean:
-        forall t a p,
-          let c := node p in
-          ~ clean cl a t c ->
-          clean cl a (S t) c ->
-          exists c' t', t' <= t /\ data (s cl t') c' a = data (s cl (S t)) c a /\
-                        clean cl a t' c' /\
-                        forall ti, t' <= ti <= t ->
-                                   match respFn cl ti with
-                                     | Some (Build_Resp ci ii _) =>
-                                         ~ (loc (reqFn ci ii) = a /\ desc (reqFn ci ii) = St)
-                                     | None => True
-                                   end
-    }.
+  Parameter nonAncestorCompatible:
+    forall t a p1 p2,
+      let c1 := node p1 in
+      let c2 := node p2 in
+      ~ descendent c1 c2 ->
+      ~ descendent c2 c1 ->
+      compatible (state t c1 a) (state t c2 a).
+ 
+  Parameter dataFromClean:
+    forall t a p,
+      let c := node p in
+      ~ clean a t c ->
+      clean a (S t) c ->
+      exists c' t', t' <= t /\ data t' c' a = data (S t) c a /\
+                    clean a t' c' /\ forall ti, t' <= ti <= t -> noStore respFn ti a.
 
-  Definition classicalProp P := P \/ ~ P.
+  Parameter processReq:
+    forall t, 
+      match respFn t with
+        | Some (Build_Resp cProc _ _) =>
+          let c := p_node cProc in
+          let (a, op, d) := reqFn cProc (next t c) in
+          match op with
+            | Ld => le Sh (state t c a)
+            | St => state t c a = Mo
+          end
+        | None => True
+      end.
+   
+  Parameter nextChange:
+    forall t p,
+      let c := p_node p in
+      next (S t) c <> next t c ->
+      match respFn t with
+        | Some (Build_Resp cProc' _ _) => p_node cProc' = c
+        | None => False
+      end.
+   
+  Parameter noReqAgain:
+    forall t,
+    match respFn t with
+      | Some (Build_Resp cProc _ _) =>
+        let c := p_node cProc in
+        next (S t) c = S (next t c)
+      | None => True
+    end.
+End SecondLevel.
 
-  Ltac expandSl sl :=
-    destruct sl as [nonAncestorCompatible dataFromClean]; simpl in *.
+Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
+                    (Import sl: SecondLevel coh cl): FirstLevel coh cl.
+  Module ord := CoherenceSolve coh.
+
+  Definition clean := sl.clean.
+
+  Definition noStoreData := sl.noStoreData.
+
+  Definition isStoreData := sl.isStoreData.
+
+  Definition processReq := sl.processReq.
 
   Section DecChildProp.
     Variable P: Tree -> Tree -> Prop.
@@ -76,65 +116,58 @@ Section SecondLevel.
   End DecChildProp.
 
   Lemma decClean:
-    forall a t p, clean cl a t p \/ ~ clean cl a t p.
+    forall a t p, clean a t p \/ ~ clean a t p.
   Proof.
     intros a t p.
-    unfold clean.
-    assert (sleOpts: forall x y, classicalProp (sle coh x y)) by
-           (unfold classicalProp; intros; unfold sle;
-            destruct (slt_total coh x y) as [c1 | [c2 | c3]];
-            intuition; right; intros;
-            match goal with
-              | H: slt _ ?x ?y \/ ?x = ?y |- _ => destruct H; order coh
-            end).
-    assert (first: classicalProp (sle coh (Sh coh) (state (s cl t) p a))) by (apply sleOpts).
-    assert (second: classicalProp (forall c, parent c p -> sle coh (dir (s cl t) p c a) (Sh coh))).
-    apply (decChildProp (fun p c => sle coh (dir (s cl t) p c a) (Sh coh)) 
-                        (fun p c => sleOpts (dir (s cl t) p c a) (Sh coh)) p).
+    unfold clean, sl.clean.
+    assert (sleOpts: forall x y, classicalProp (le x y)) by
+           (unfold classicalProp; intros x y;
+            destruct (lt_total x y);
+              repeat match goal with
+                       | H: lt y x |- _ => right
+                       | H: _ \/ _ |- _ => destruct H
+                       | |- _ => left
+                     end; ord.order).
+    assert (first: classicalProp (le Sh (state t p a))) by (apply sleOpts).
+    assert (second: classicalProp (forall c, parent c p -> le (dir t p c a) Sh)).
+    apply (decChildProp (fun p c => le (dir t p c a) Sh) 
+                        (fun p c => sleOpts (dir t p c a) Sh) p).
     unfold classicalProp in *.
     destruct first, second; intuition.
   Qed.
 
-  Variable sl: SecondLevel.
-
-  Theorem latestValue:
-    forall t a pCache,
-      let p := node pCache in
-      clean cl a t p ->
-      (data (s cl t) p a = initData a /\
-       forall t', t' < t -> noStore (respFn cl) t' a ) \/
-      (exists tm,
-         tm < t /\
-         match respFn cl tm with
-           | Some (Build_Resp cm im dm) =>
-             let (am, descQm, dtQm) := reqFn cm im in
-             data (s cl t) p a = dtQm /\ am = a /\ descQm = St /\
-             forall t', tm < t' < t -> noStore (respFn cl) t' a
-           | None => False
-         end).
+  Theorem latestValue t a pCache:
+    let p := node pCache in
+      clean a t p ->
+      noStoreData (data t p a) a t \/ isStoreData (data t p a) a t.
   Proof.
     intros.
-    unfold p in *; clear p.
-    expandSl sl.
     pose proof (fun t => decClean a t (node pCache)) as decClean.
-    unfold clean in *.
-    expandCl cl.
-    clear respFnIdx respFnLdData.
-    induction t.
+    induction t as [| t IHt].
 
     left.
-    rewrite stateZero in *.
-    destruct (decTree (node pCache) hier);
-      [rewrite dataZero; constructor; intuition; omega |
-       match goal with
-         | H: sle _ _ _ /\ _ |- _ =>
-             let x := fresh in
-               destruct H as [[x | x] _]; generalize x; clear; intros ;
-           pose proof (lb_In coh (Sh coh)); intuition; order coh
-       end].
+    unfold clean, sl.clean in *.
+    rewrite state0 in *.
+    unfold noStoreData.
+    destruct (decTree p hier);
+    [ rewrite data0; constructor; intuition; omega |
+      match goal with
+        | H : le _ _ /\ _ |- _ => destruct H
+      end; pose proof (@lb_In Sh);
+      pose proof (ne_In_Sh);
+      ord.order].
 
     specialize (decClean t).
-    specialize (dataFromClean t a pCache).
+    pose proof (@dataFromClean t a pCache).
 
+    destruct decClean.
+    unfold sl.clean in *.
+
+    unfold noStoreData, isStoreData, sl.noStoreData, sl.isStoreData.
+    intros.
+    admit.
   Qed.
-End SecondLevel.
+
+  Definition nextChange := sl.nextChange.
+  Definition noReqAgain := sl.noReqAgain.
+End mkFirstLevel.

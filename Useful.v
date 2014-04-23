@@ -2,6 +2,8 @@ Require Import Omega List.
 
 Set Implicit Arguments.
 
+Definition classicalProp P := P \/ ~ P.
+
 Ltac destructAll :=
   match goal with
     | [|- context [match ?P with _ => _ end] ] => destruct P
