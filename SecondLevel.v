@@ -18,6 +18,13 @@ Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
                            | None => False
                          end.
 
+  Parameter cleanM:
+    forall t a p1 p2,
+      clean a t (node p1) ->
+      clean a t (node p2) ->
+      state t (node p1) a = Mo ->
+      node p1 = node p2.
+
   Parameter nonAncestorCompatible:
     forall t a p1 p2,
       let c1 := node p1 in
@@ -136,6 +143,25 @@ Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
     destruct first, second; intuition.
   Qed.
 
+  Lemma noStoreLatest t a c:
+    (noStoreData (data t c a) a t \/ isStoreData (data t c a) a t) ->
+    noStore respFn t a ->
+    noStoreData (data (S t) c a) a (S t) \/ isStoreData (data (S t) c a) a (S t).
+  Proof.
+    intros prev noCurr.
+    destruct prev.
+    left; unfold noStoreData, sl.noStoreData in H.
+    assert (forall t', t' < S t -> noStore respFn t' a).
+    intros.
+    assert (t' < t \/ t' = t) by omega.
+    destruct H1.
+    firstorder.
+    rewrite H1.
+    firstorder.
+    firstorder.
+    firstorder.
+    unfold noStoreData, sl.noStoreData, isStoreData, sl.isStoreData in H.
+
   Theorem latestValue t a pCache:
     let p := node pCache in
       clean a t p ->
@@ -158,6 +184,10 @@ Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
       ord.order].
 
     specialize (decClean t).
+
+    destruct decClean.
+    decClean).
+
     pose proof (@dataFromClean t a pCache).
 
     destruct decClean.
