@@ -18,6 +18,12 @@ Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
                            | None => False
                          end.
 
+  Parameter cleanSameData:
+    forall t a p,
+      clean a t (node p) ->
+      noStore respFn t a ->
+      data t (node p) a = data (S t) (node p) a.
+
   Parameter cleanM:
     forall t a p1 p2,
       clean a t (node p1) ->
@@ -25,6 +31,7 @@ Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
       state t (node p1) a = Mo ->
       node p1 = node p2.
 
+(*
   Parameter nonAncestorCompatible:
     forall t a p1 p2,
       let c1 := node p1 in
@@ -32,6 +39,7 @@ Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
       ~ descendent c1 c2 ->
       ~ descendent c2 c1 ->
       compatible (state t c1 a) (state t c2 a).
+*)
  
   Parameter dataFromClean:
     forall t a p,
@@ -53,24 +61,6 @@ Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
           end
         | None => True
       end.
-   
-  Parameter nextChange:
-    forall t p,
-      let c := p_node p in
-      next (S t) c <> next t c ->
-      match respFn t with
-        | Some (Build_Resp cProc' _ _) => p_node cProc' = c
-        | None => False
-      end.
-   
-  Parameter noReqAgain:
-    forall t,
-    match respFn t with
-      | Some (Build_Resp cProc _ _) =>
-        let c := p_node cProc in
-        next (S t) c = S (next t c)
-      | None => True
-    end.
 End SecondLevel.
 
 Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
@@ -143,38 +133,48 @@ Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
     destruct first, second; intuition.
   Qed.
 
-  Lemma noStoreLatest t a c:
-    (noStoreData (data t c a) a t \/ isStoreData (data t c a) a t) ->
-    noStore respFn t a ->
-    noStoreData (data (S t) c a) a (S t) \/ isStoreData (data (S t) c a) a (S t).
+  Lemma noStoreLatest t a p:
+    let c := node p in
+      clean a t c ->
+      (noStoreData (data t c a) a t \/ isStoreData (data t c a) a t) ->
+      noStore respFn t a ->
+      noStoreData (data (S t) c a) a (S t) \/ isStoreData (data (S t) c a) a (S t).
   Proof.
-    intros prev noCurr.
-    destruct prev.
-    left; unfold noStoreData, sl.noStoreData in H.
-    assert (forall t', t' < S t -> noStore respFn t' a).
-    intros.
-    assert (t' < t \/ t' = t) by omega.
-    destruct H1.
-    firstorder.
-    rewrite H1.
-    firstorder.
-    firstorder.
-    firstorder.
-    unfold noStoreData, sl.noStoreData, isStoreData, sl.isStoreData in H.
 
-  Theorem latestValue t a pCache:
-    let p := node pCache in
-      clean a t p ->
-      noStoreData (data t p a) a t \/ isStoreData (data t p a) a t.
+    Ltac finishOpts :=
+      match goal with
+        | H: ?t' < S ?t |- _ =>
+            let x := fresh in assert (x: t' < t \/ t' = t) by omega;
+            destruct x;
+            match goal with
+              | H': ?t' = ?t |- _ => rewrite H' in *
+              | _ => idtac
+            end; intuition
+      end.
+
+    intros c cleanT prev noCurr.
+    pose proof (cleanSameData p cleanT noCurr) as sameData.
+    unfold noStoreData, sl.noStoreData, isStoreData, sl.isStoreData in *.
+    unfold c in *.
+    rewrite <- sameData in *.
+    destruct prev;
+
+      [left; intuition; finishOpts |
+       right; repeat (try applyExists; destructAll; intuition); finishOpts].
+  Qed.
+
+  Theorem latestValue t:
+    forall a pCache,
+      let p := node pCache in
+        clean a t p ->
+        noStoreData (data t p a) a t \/ isStoreData (data t p a) a t.
   Proof.
-    intros.
-    pose proof (fun t => decClean a t (node pCache)) as decClean.
     induction t as [| t IHt].
 
-    left.
-    unfold clean, sl.clean in *.
+    intros.
+
+    left; unfold clean, sl.clean in *.
     rewrite state0 in *.
-    unfold noStoreData.
     destruct (decTree p hier);
     [ rewrite data0; constructor; intuition; omega |
       match goal with
@@ -183,7 +183,24 @@ Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
       pose proof (ne_In_Sh);
       ord.order].
 
-    specialize (decClean t).
+    intros.
+    pose proof (fun t p => decClean a t p) as decClean.
+
+    destruct decClean.
+    admit.
+
+    pose proof (dataFromClean _ H0 H).
+    match goal with
+      | H: clean ?a ?t ?p, H1: clean ?a ?t ?p -> _ |- _ =>
+          let x := fresh in
+            destruct (H1 H) as [x|x];
+          apply (noStoreLatest H (H1 H) x)
+    end.
+
+    apply (noStoreLatest H0 H1
+
+    destrutc
+    specialize (IHt cleanT).
 
     destruct decClean.
     decClean).

@@ -4,6 +4,13 @@ Set Implicit Arguments.
 
 Definition classicalProp P := P \/ ~ P.
 
+Ltac applyExists :=
+  match goal with
+    | H: exists _, _ |- _ => let x := fresh in
+                               let y := fresh in
+                                 destruct H as [x y]; exists x
+  end.
+
 Ltac destructAll :=
   match goal with
     | [|- context [match ?P with _ => _ end] ] => destruct P
