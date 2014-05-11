@@ -27,8 +27,7 @@ Record Proc := { proc: Cache;
 
 Definition p_node x := node (proc x).
 
-Record Req := { loc: Addr;
-                desc: Desc;
+Record Req := { desc: Desc;
                 dataQ: Data
               }.
 
@@ -37,5 +36,5 @@ Record Resp := { procR: Proc;
                  datum: Data
                }.
 
-Parameter reqFn: Proc -> Time -> Req.
+Parameter reqFn: Addr -> Proc -> Index -> Req.
 Parameter initData: Addr -> Data.

@@ -3,48 +3,48 @@ Require Import DataTypes Coherence Tree.
 Set Implicit Arguments.
 
 Module Type CacheLocal (Import coh: Coherence).
-  Parameter state: Time -> Tree -> Addr -> t.
-  Parameter dir: Time -> Tree -> Tree -> Addr -> t.
-  Parameter data: Time -> Tree -> Addr -> Data.
-  Parameter wait: Time -> Tree -> Addr -> bool.
-  Parameter waitS: Time -> Tree -> Addr -> t.
-  Parameter dwait: Time -> Tree -> Tree -> Addr -> bool.
-  Parameter dwaitS: Time -> Tree -> Tree -> Addr -> t.
-  Parameter next: Time -> Tree -> nat.
+  Parameter state: Addr -> Time -> Tree -> t.
+  Parameter dir: Addr -> Time -> Tree -> Tree -> t.
+  Parameter data: Addr -> Time -> Tree -> Data.
+  Parameter wait: Addr -> Time -> Tree -> bool.
+  Parameter waitS: Addr -> Time -> Tree -> t.
+  Parameter dwait: Addr -> Time -> Tree -> Tree -> bool.
+  Parameter dwaitS: Addr -> Time -> Tree -> Tree -> t.
+  Parameter next: Addr -> Time -> Tree -> nat.
 
-  Parameter respFn: Time -> option Resp.
+  Parameter respFn: Addr -> Time -> option Resp.
 
-  Parameter respFnIdx: forall t,
-                         match respFn t with
-                           | Some (Build_Resp c i _) => i = next t (p_node c)
+  Parameter respFnIdx: forall a t,
+                         match respFn a t with
+                           | Some (Build_Resp c i _) => i = next a t (p_node c)
                            | None => True
                          end.
-  Parameter respFnLdData: forall t,
-                            match respFn t with
+  Parameter respFnLdData: forall a t,
+                            match respFn a t with
                               | Some (Build_Resp c i d) =>
-                                  match desc (reqFn c i) with
-                                    | Ld => d = data t (p_node c) (loc (reqFn c i))
+                                  match desc (reqFn a c i) with
+                                    | Ld => d = data a t (p_node c)
                                     | St => d = initData zero
                                   end
                               | None => True
                             end.
 
-  Parameter state0: state 0 = fun c a =>
-                                match decTree c hier with
-                                  | left _ => Mo
-                                  | right _ => In
-                                end.
+  Parameter state0: forall a c, state a 0 c = match decTree c hier with
+                                                | left _ => Mo
+                                                | right _ => In
+                                              end.
 
-  Parameter dir0: dir 0 = fun p c a => In.
+  Parameter dir0: forall a p c, dir a 0 p c = In.
 
-  Parameter data0: data 0 = fun c a => initData a.
+  Parameter data0: forall a c, data a 0 c = initData a.
 
-  Parameter wait0: wait 0 = fun c a => false.
+  Parameter wait0: forall a c, wait a 0 c = false.
 
-  Parameter dwait0: dwait 0 = fun p c a => false.
+  Parameter dwait0: forall a p c, dwait a 0 p c = false.
 
-  Parameter next0: next 0 = fun c => 0.
+  Parameter next0: forall a c, next a 0 c = 0.
 End CacheLocal.
+
 (*
 Section CacheLocal.
   Variable State: Set.

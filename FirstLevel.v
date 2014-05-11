@@ -4,54 +4,35 @@ Set Implicit Arguments.
 
 Module Type FirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
   Definition clean a t p :=
-    le Sh (state t p a) /\ forall c, parent c p -> le (dir t p c a) Sh.
+    le Sh (state a t p) /\ forall c, parent c p -> le (dir a t p c) Sh.
 
-  Definition noStoreData d a t :=
-    d = initData a /\ forall t', t' < t -> noStore respFn t' a.
+  About noStore.
 
-  Definition isStoreData d a t :=
-    exists tm, tm < t /\ match respFn tm with
-                           | Some (Build_Resp cm im dm) =>
-                               let (am, descQm, dtQm) := reqFn cm im in
-                                 d = dtQm /\ am = a /\ descQm = St /\
-                                 forall t', tm < t' < t -> noStore respFn t' a
-                           | None => False
-                         end.
+  Definition noStoreData a d t :=
+    d = initData a /\ forall t', t' < t -> noStore a (respFn a) t'.
 
-  Parameter latestValue:
-    forall t a pCache,
-      let p := node pCache in
-      clean a t p ->
-      noStoreData (data t p a) a t \/ isStoreData (data t p a) a t.
-
-  Parameter processReq:
-    forall t, 
-      match respFn t with
-        | Some (Build_Resp cProc _ _) =>
-          let c := p_node cProc in
-          let (a, op, d) := reqFn cProc (next t c) in
           match op with
-            | Ld => le Sh (state t c a)
-            | St => state t c a = Mo
+            | Ld => le Sh (state a t c)
+            | St => state a t c = Mo
           end
         | None => True
       end.
    
   Parameter nextChange:
-    forall t p,
+    forall a t p,
       let c := p_node p in
-      next (S t) c <> next t c ->
-      match respFn t with
+      next a (S t) c <> next a t c ->
+      match respFn a t with
         | Some (Build_Resp cProc' _ _) => p_node cProc' = c
         | None => False
       end.
    
   Parameter noReqAgain:
-    forall t,
-    match respFn t with
+    forall a t,
+    match respFn a t with
       | Some (Build_Resp cProc _ _) =>
         let c := p_node cProc in
-        next (S t) c = S (next t c)
+        next a (S t) c = S (next a t c)
       | None => True
     end.
 End FirstLevel.
@@ -62,14 +43,14 @@ Module mkStoreAtomic (Import coh: Coherence) (Import cl: CacheLocal coh) (Import
     Lemma nextIncOrSame:
       forall t p,
         let c := p_node p in
-        next t c = next (S t) c \/
-        next (S t) c = S (next t c).
+        next a t c = next a (S t) c \/
+        next a (S t) c = S (next a t c).
     Proof.
       intros t p c.
-      assert (opts: next t c = next (S t) c \/
-                    next (S t) c <> next t c) by omega.
-      pose proof (@nextChange t p) as nextChange.
-      pose proof (noReqAgain t) as noReqAgain.
+      assert (opts: next a t c = next a (S t) c \/
+                    next a (S t) c <> next a t c) by omega.
+      pose proof (@nextChange a t p) as nextChange.
+      pose proof (noReqAgain a t) as noReqAgain.
       destruct opts; repeat destructAll;
       try match goal with
             | [H: (next (S t) c <> next t c) |- _ ] =>

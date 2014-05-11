@@ -3,12 +3,13 @@ Require Import DataTypes.
 Set Implicit Arguments.
 
 Section StoreAtomicity.
+  Variable a: Addr.
   Variable respFn: Time -> option Resp.
-  Definition noStore t a :=
+
+  Definition noStore t :=
     match respFn t with
       | Some (Build_Resp c' i' d') =>
-        let (a', descQ', dtQ') := reqFn c' i' in
-        a' = a -> descQ' = St -> False
+          desc (reqFn a c' i') = St -> False
       | _ => True
     end.
 
@@ -44,17 +45,17 @@ Section StoreAtomicity.
         forall t,
           match respFn t with
             | Some (Build_Resp c i d) =>
-              let (a, descQ, dtQ) := reqFn c i in
+              let (descQ, dtQ) := reqFn a c i in
               match descQ with
                 | Ld =>
-                  (d = initData a /\ forall t', t' < t -> noStore t' a) \/
+                  (d = initData a /\ forall t', t' < t -> noStore t') \/
                   (exists tm,
                      tm < t /\
                      match respFn tm with
                        | Some (Build_Resp cm im dm) =>
-                         let (am, descQm, dtQm) := reqFn cm im in
-                         d = dtQm /\ am = a /\ descQm = St /\
-                         forall t', tm < t' < t -> noStore t' a
+                         let (descQm, dtQm) := reqFn a cm im in
+                         d = dtQm /\ descQm = St /\
+                         forall t', tm < t' < t -> noStore t'
                        | _ => False
                      end)
                 | St => d = initData zero 
