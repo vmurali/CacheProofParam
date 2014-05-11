@@ -4,31 +4,31 @@ Set Implicit Arguments.
 
 Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
   Definition clean a t p :=
-    le Sh (state t p a) /\ forall c, parent c p -> le (dir t p c a) Sh.
+    le Sh (state a t p) /\ forall c, parent c p -> le (dir a t p c) Sh.
 
-  Definition noStoreData d a t :=
-    d = initData a /\ forall t', t' < t -> noStore respFn t' a.
+  Definition noStoreData a d t :=
+    d = initData a /\ forall t', t' < t -> noStore a (respFn a) t'.
 
-  Definition isStoreData d a t :=
-    exists tm, tm < t /\ match respFn tm with
+  Definition isStoreData a d t :=
+    exists tm, tm < t /\ match respFn a tm with
                            | Some (Build_Resp cm im dm) =>
-                               let (am, descQm, dtQm) := reqFn cm im in
-                                 d = dtQm /\ am = a /\ descQm = St /\
-                                 forall t', tm < t' < t -> noStore respFn t' a
+                               let (descQm, dtQm) := reqFn a cm im in
+                                 d = dtQm /\ descQm = St /\
+                                 forall t', tm < t' < t -> noStore a (respFn a) t'
                            | None => False
                          end.
 
   Parameter cleanSameData:
-    forall t a p,
+    forall a t p,
       clean a t (node p) ->
-      noStore respFn t a ->
-      data t (node p) a = data (S t) (node p) a.
+      noStore a (respFn a) t ->
+      data a t (node p) = data a (S t) (node p).
 
   Parameter cleanM:
-    forall t a p1 p2,
+    forall a t p1 p2,
       clean a t (node p1) ->
       clean a t (node p2) ->
-      state t (node p1) a = Mo ->
+      state a t (node p1) = Mo ->
       node p1 = node p2.
 
 (*
@@ -42,22 +42,22 @@ Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
 *)
  
   Parameter dataFromClean:
-    forall t a p,
+    forall a t p,
       let c := node p in
       ~ clean a t c ->
       clean a (S t) c ->
-      exists c' t', t' <= t /\ data t' c' a = data (S t) c a /\
-                    clean a t' c' /\ forall ti, t' <= ti <= t -> noStore respFn ti a.
+      exists c' t', t' <= t /\ data a t' c' = data a (S t) c /\
+                    clean a t' c' /\ forall ti, t' <= ti <= t -> noStore a (respFn a) ti.
 
   Parameter processReq:
-    forall t, 
-      match respFn t with
+    forall a t,
+      match respFn a t with
         | Some (Build_Resp cProc _ _) =>
           let c := p_node cProc in
-          let (a, op, d) := reqFn cProc (next t c) in
+          let (op, d) := reqFn a cProc (next a t c) in
           match op with
-            | Ld => le Sh (state t c a)
-            | St => state t c a = Mo
+            | Ld => le Sh (state a t c)
+            | St => state a t c = Mo
           end
         | None => True
       end.
@@ -125,10 +125,10 @@ Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
                        | H: _ \/ _ |- _ => destruct H
                        | |- _ => left
                      end; ord.order).
-    assert (first: classicalProp (le Sh (state t p a))) by (apply sleOpts).
-    assert (second: classicalProp (forall c, parent c p -> le (dir t p c a) Sh)).
-    apply (decChildProp (fun p c => le (dir t p c a) Sh) 
-                        (fun p c => sleOpts (dir t p c a) Sh) p).
+    assert (first: classicalProp (le Sh (state a t p))) by (apply sleOpts).
+    assert (second: classicalProp (forall c, parent c p -> le (dir a t p c) Sh)).
+    apply (decChildProp (fun p c => le (dir a t p c) Sh) 
+                        (fun p c => sleOpts (dir a t p c) Sh) p).
     unfold classicalProp in *.
     destruct first, second; intuition.
   Qed.
@@ -136,9 +136,9 @@ Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
   Lemma noStoreLatest t a p:
     let c := node p in
       clean a t c ->
-      (noStoreData (data t c a) a t \/ isStoreData (data t c a) a t) ->
-      noStore respFn t a ->
-      noStoreData (data (S t) c a) a (S t) \/ isStoreData (data (S t) c a) a (S t).
+      (noStoreData a (data a t c) t \/ isStoreData a (data a t c) t) ->
+      noStore a (respFn a) t ->
+      noStoreData a (data a (S t) c) (S t) \/ isStoreData a (data a (S t) c) (S t).
   Proof.
 
     Ltac finishOpts :=
@@ -167,7 +167,7 @@ Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
     forall a pCache,
       let p := node pCache in
         clean a t p ->
-        noStoreData (data t p a) a t \/ isStoreData (data t p a) a t.
+        noStoreData a (data a t p) t \/ isStoreData a (data a t p) t.
   Proof.
     induction t as [| t IHt].
 

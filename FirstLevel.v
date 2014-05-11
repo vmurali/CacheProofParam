@@ -6,8 +6,6 @@ Module Type FirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
   Definition clean a t p :=
     le Sh (state a t p) /\ forall c, parent c p -> le (dir a t p c) Sh.
 
-  Print noStore.
-
   Definition noStoreData a d t :=
     d = initData a /\ forall t', t' < t -> noStore a (respFn a) t'.
 
