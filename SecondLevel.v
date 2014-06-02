@@ -7,21 +7,21 @@ Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
     le Sh (state a t p) /\ forall c, parent c p -> le (dir a t p c) Sh.
 
   Definition noStoreData a d t :=
-    d = initData a /\ forall t', t' < t -> noStore a (respFn a) t'.
+    d = initData a /\ forall t', t' < t -> noStore a respFn t'.
 
   Definition isStoreData a d t :=
     exists tm, tm < t /\ match respFn a tm with
                            | Some (Build_Resp cm im dm) =>
                                let (descQm, dtQm) := reqFn a cm im in
                                  d = dtQm /\ descQm = St /\
-                                 forall t', tm < t' < t -> noStore a (respFn a) t'
+                                 forall t', tm < t' < t -> noStore a respFn t'
                            | None => False
                          end.
 
   Parameter cleanSameData:
     forall a t p,
       clean a t (node p) ->
-      noStore a (respFn a) t ->
+      noStore a respFn t ->
       data a t (node p) = data a (S t) (node p).
 
   Parameter cleanM:
@@ -47,7 +47,7 @@ Module Type SecondLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
       ~ clean a t c ->
       clean a (S t) c ->
       exists c' t', t' <= t /\ data a t' c' = data a (S t) c /\
-                    clean a t' c' /\ forall ti, t' <= ti <= t -> noStore a (respFn a) ti.
+                    clean a t' c' /\ forall ti, t' <= ti <= t -> noStore a respFn ti.
 
   Parameter processReq:
     forall a t,
@@ -137,7 +137,7 @@ Module mkFirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh)
     let c := node p in
       clean a t c ->
       (noStoreData a (data a t c) t \/ isStoreData a (data a t c) t) ->
-      noStore a (respFn a) t ->
+      noStore a respFn t ->
       noStoreData a (data a (S t) c) (S t) \/ isStoreData a (data a (S t) c) (S t).
   Proof.
 

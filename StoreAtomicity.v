@@ -4,10 +4,10 @@ Set Implicit Arguments.
 
 Section StoreAtomicity.
   Variable a: Addr.
-  Variable respFn: Time -> option Resp.
+  Variable respFn: Addr -> Time -> option Resp.
 
   Definition noStore t :=
-    match respFn t with
+    match respFn a t with
       | Some (Build_Resp c' i' d') =>
           desc (reqFn a c' i') = St -> False
       | _ => True
@@ -16,24 +16,24 @@ Section StoreAtomicity.
   Record StoreAtomicity :=
     {
       uniqRespLabels:
-        forall t1 t2, match respFn t1, respFn t2 with
+        forall t1 t2, match respFn a t1, respFn a t2 with
                         | Some (Build_Resp c1 i1 _), Some (Build_Resp c2 i2 _) =>
                           p_node c1 = p_node c2 -> i1 = i2 -> t1 = t2
                         | _, _ => True
                       end;
 
       localOrdering:
-        forall t1 t2, match respFn t1, respFn t2 with
+        forall t1 t2, match respFn a t1, respFn a t2 with
                         | Some (Build_Resp c1 i1 _), Some (Build_Resp c2 i2 _) =>
                           p_node c1 = p_node c2 -> i1 > i2 -> t1 > t2
                         | _, _ => True
                       end;
 
       allPrevious:
-        forall t2, match respFn t2 with
+        forall t2, match respFn a t2 with
                      | Some (Build_Resp c2 i2 _) =>
                        forall i1, i1 < i2 -> exists t1, t1 < t2 /\
-                                                        match respFn t1 with
+                                                        match respFn a t1 with
                                                           | Some (Build_Resp c1 i _) =>
                                                             p_node c1 = p_node c2 /\ i = i1
                                                           | None => False
@@ -43,7 +43,7 @@ Section StoreAtomicity.
 
       storeAtomicity:
         forall t,
-          match respFn t with
+          match respFn a t with
             | Some (Build_Resp c i d) =>
               let (descQ, dtQ) := reqFn a c i in
               match descQ with
@@ -51,7 +51,7 @@ Section StoreAtomicity.
                   (d = initData a /\ forall t', t' < t -> noStore t') \/
                   (exists tm,
                      tm < t /\
-                     match respFn tm with
+                     match respFn a tm with
                        | Some (Build_Resp cm im dm) =>
                          let (descQm, dtQm) := reqFn a cm im in
                          d = dtQm /\ descQm = St /\

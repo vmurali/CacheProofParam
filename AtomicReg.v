@@ -21,13 +21,13 @@ Section ForAddr.
                                               end))
   | Idle: AtomicTrans s s.
   
-  Variable respFn: Time -> option Resp.
+  Variable respFn: Addr -> Time -> option Resp.
   Variable sa: StoreAtomicity a respFn.
 
   Definition AtomicList := TransList AtomicTrans (Build_State (initData a) (fun t => 0)).
 
   Definition getTransNext n s (al: AtomicList n s) :=
-    match respFn n with
+    match respFn a n with
       | Some r => Build_NextTrans _ _ _ (Req s (procR r))
       | None => Build_NextTrans _ _ _ (Idle s)
     end.
@@ -387,7 +387,7 @@ Section ForAddr.
   Section PrevMatch.
     Variable t: nat.
     Variable prevEq: forall ti : nat,
-                       ti < t -> sameResp (respFn ti) (atomicResp (getTrans getTransNext ti)).
+                       ti < t -> sameResp (respFn a ti) (atomicResp (getTrans getTransNext ti)).
 
     Definition nextTransList := getTransList getTransNext.
 
@@ -398,42 +398,42 @@ Section ForAddr.
       unfold getTransNext in *.
 
     Lemma bothSomeOrNone:
-      match atomicResp (getTrans getTransNext t), respFn t with
+      match atomicResp (getTrans getTransNext t), respFn a t with
         | Some _, Some _ => True
         | None, None => True
         | _, _ => False
       end.
     Proof.
       assocResp.
-      destruct (respFn t); simpl; intuition.
+      destruct (respFn a t); simpl; intuition.
     Qed.
 
     Lemma procSame:
-      match atomicResp (getTrans getTransNext t), respFn t with
+      match atomicResp (getTrans getTransNext t), respFn a t with
         | Some (Build_Resp c1 _ _), Some (Build_Resp c2 _ _) => p_node c1 = p_node c2
         | _, _ => True
       end.
     Proof.
       assocResp.
-      destruct (respFn t); simpl.
+      destruct (respFn a t); simpl.
       destruct r; intuition.
       intuition.
     Qed.
 
     Lemma nextGtFalse:
-      match atomicResp (getTrans getTransNext t), respFn t with
+      match atomicResp (getTrans getTransNext t), respFn a t with
         | Some (Build_Resp _ i1 _), Some (Build_Resp _ i2 _) => i1 > i2 -> False
         | _, _ => True
       end.
     Proof.
       assocResp.
-      case_eq (respFn t).
+      case_eq (respFn a t).
       intros r caseR; destruct r; simpl in *.
       intros nextGt.
       pose proof (allAtomPrev _ _ nextGt) as [t' [t'_lt_t allPrev]].
       specialize (prevEq t'_lt_t).
       assocResp.
-      case_eq (respFn t').
+      case_eq (respFn a t').
       intros r caseR'; destruct r; rewrite caseR' in *; simpl in *.
       pose proof (uniqRespLabels sa t t') as uniq.
       rewrite caseR, caseR' in uniq.
@@ -446,13 +446,13 @@ Section ForAddr.
     Qed.
 
     Lemma nextLtFalse:
-      match atomicResp (getTrans getTransNext t), respFn t with
+      match atomicResp (getTrans getTransNext t), respFn a t with
         | Some (Build_Resp _ i1 _), Some (Build_Resp _ i2 _) => i1 < i2 -> False
         | _, _ => True
       end.
     Proof.
       assocResp.
-      case_eq (respFn t).
+      case_eq (respFn a t).
       intros r caseR; destruct r; simpl in *.
       intros nextLt.
       pose proof (allPrevious sa t) as allPrev.
@@ -461,7 +461,7 @@ Section ForAddr.
       destruct allPrev as [t' [t'_lt_t allPrev]].
       specialize (prevEq t'_lt_t).
       assocResp.
-      case_eq (respFn t').
+      case_eq (respFn a t').
       intros r caseR'; destruct r; rewrite caseR' in *; simpl in *.
       pose proof (uniqAtomLabels t t') as uniq.
       assocResp.
@@ -475,7 +475,7 @@ Section ForAddr.
     Qed.
 
     Lemma nextEq:
-      match atomicResp (getTrans getTransNext t), respFn t with
+      match atomicResp (getTrans getTransNext t), respFn a t with
         | Some (Build_Resp _ i1 _), Some (Build_Resp _ i2 _) => i1 = i2
         | _, _ => True
       end.
@@ -486,14 +486,14 @@ Section ForAddr.
     Qed.
 
     Lemma loadMatch:
-      match atomicResp (getTrans getTransNext t), respFn t with
+      match atomicResp (getTrans getTransNext t), respFn a t with
         | Some (Build_Resp _ _ d1), Some (Build_Resp _ _ d2) =>
           d1 = d2
         | _, _ => True
       end.
     Proof.
       assocResp.
-      case_eq (respFn t).
+      case_eq (respFn a t).
       intros r respEq; destruct r; simpl in *.
       case_eq (desc (reqFn a procR (next (lSt (nextTransList t)) (p_node procR)))).
       intros isLd.
@@ -524,7 +524,7 @@ Section ForAddr.
       unfold noStore in *.
       specialize (no1 tm tm_lt_t).
       
-      case_eq (respFn tm).
+      case_eq (respFn a tm).
       intros r respmEq; destruct r; rewrite respmEq in *; simpl in *.
       unfold matchAtomStore in stMatch.
       assocResp.
@@ -546,7 +546,7 @@ Section ForAddr.
       assocResp.
       specialize (no2 tm tm_lt_t).
 
-      case_eq (respFn tm).
+      case_eq (respFn a tm).
       intros r respmEq; destruct r; rewrite respmEq in *; simpl in *.
       destruct prevEq as [_ [idEq _]].
       rewrite <- idEq in *.
@@ -569,7 +569,7 @@ Section ForAddr.
 
       unfold noStore in *.
 
-      case_eq (respFn tm1); case_eq (respFn tm2).
+      case_eq (respFn a tm1); case_eq (respFn a tm2).
 
       SCase "some tm1, some tm2".
       intros r r2Eq; destruct r; rewrite r2Eq in *;
@@ -652,7 +652,7 @@ Section ForAddr.
     Qed.
 
     Lemma allMatch:
-      match atomicResp (getTrans getTransNext t), respFn t with
+      match atomicResp (getTrans getTransNext t), respFn a t with
         | Some (Build_Resp c1 i1 d1), Some (Build_Resp c2 i2 d2) =>
           i1 = i2 /\ p_node c1 = p_node c2 /\ d1 = d2
         | None, Some _ => False
@@ -670,7 +670,7 @@ Section ForAddr.
   End PrevMatch.
 
   Theorem obeysP: forall n,
-                    sameResp (respFn n) (atomicResp (getTrans getTransNext n)).
+                    sameResp (respFn a n) (atomicResp (getTrans getTransNext n)).
   Proof.
     apply strong_ind.
     intros t prevEq.
@@ -682,7 +682,7 @@ Section ForAddr.
 
   Definition getAtomicResp n := atomicResp (getTrans getTransNext n).
 
-  Theorem respEq n: sameResp (respFn n) (getAtomicResp n).
+  Theorem respEq n: sameResp (respFn a n) (getAtomicResp n).
   Proof.
     apply (obeysP n).
   Qed.

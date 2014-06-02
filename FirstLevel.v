@@ -7,14 +7,14 @@ Module Type FirstLevel (Import coh: Coherence) (Import cl: CacheLocal coh).
     le Sh (state a t p) /\ forall c, parent c p -> le (dir a t p c) Sh.
 
   Definition noStoreData a d t :=
-    d = initData a /\ forall t', t' < t -> noStore a (respFn a) t'.
+    d = initData a /\ forall t', t' < t -> noStore a respFn t'.
 
   Definition isStoreData a d t :=
     exists tm, tm < t /\ match respFn a tm with
                            | Some (Build_Resp cm im dm) =>
                              let (descQm, dtQm) := reqFn a cm im in
                              d = dtQm /\ descQm = St /\
-                             forall t', tm < t' < t -> noStore a (respFn a) t'
+                             forall t', tm < t' < t -> noStore a respFn t'
                            | None => False
                          end.
   Parameter latestValue:
@@ -277,9 +277,9 @@ Module mkStoreAtomic (Import coh: Coherence) (Import cl: CacheLocal coh) (Import
       intuition.
     Qed.
 
-    Theorem fullStoreAtomicity: StoreAtomicity a (respFn a).
+    Theorem fullStoreAtomicity: StoreAtomicity a respFn.
     Proof.
-      apply (Build_StoreAtomicity a (respFn a) uniqRespLabels' localOrdering'
+      apply (Build_StoreAtomicity a respFn uniqRespLabels' localOrdering'
                                   allPrevious' storeAtomicity').
     Qed.
   End ForAddr.
